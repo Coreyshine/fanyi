@@ -315,7 +315,12 @@
     }
 
     if (S.lazyMode) {
-      for (const n of nodes) S.io.observe(n);
+      /* 注意：IO 只接受元素，观察文本节点的父元素（去重） */
+      const els = new Set();
+      for (const n of nodes) {
+        const el = n.parentElement;
+        if (el && !els.has(el)) { els.add(el); S.io.observe(el); }
+      }
     } else {
       enqueue(nodes, prio);
     }
@@ -327,7 +332,10 @@
     S.io = new IntersectionObserver((entries) => {
       const vis = [];
       for (const e of entries) {
-        if (e.isIntersecting) { vis.push(e.target); S.io.unobserve(e.target); }
+        if (e.isIntersecting) {
+          vis.push(...collectTextNodes(e.target));   /* 收集该元素内的待翻文本 */
+          S.io.unobserve(e.target);
+        }
       }
       if (vis.length && S.on) { enqueue(vis, 0); pump(); }
     }, { rootMargin: '60% 0px 60% 0px' });
@@ -342,7 +350,7 @@
         const nodes = collectTextNodes(document.body);
         if (!nodes.length) return;
         if (S.lazyMode) {
-          for (const n of nodes) S.io.observe(n);   /* 新内容交给可见性观察 */
+          for (const n of nodes) if (n.parentElement) S.io.observe(n.parentElement);
         } else {
           enqueue(nodes, 3);
           pump();
