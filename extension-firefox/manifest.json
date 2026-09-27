@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "fanyi 本地翻译",
+  "version": "1.0.0",
+  "description": "本地模型实时网页翻译。需要 fanyi-server 在本机运行，翻译全程不联网。",
+  "permissions": [
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "icons": {
+    "16": "icons/fanyi16.png",
+    "32": "icons/fanyi32.png",
+    "48": "icons/fanyi48.png",
+    "128": "icons/fanyi128.png"
+  },
+  "action": {
+    "default_title": "fanyi 本地翻译",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/fanyi16.png",
+      "32": "icons/fanyi32.png",
+      "48": "icons/fanyi48.png",
+      "128": "icons/fanyi128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "fanyi@local.desktop",
+      "strict_min_version": "115.0"
+    }
+  }
+}

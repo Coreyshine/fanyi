@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fanyi · 本地翻译设置</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --ink: #1c2330; --sub: #67707f;
+    --line: #e3e6eb; --accent: #2563eb; --accent-soft: #eaf1fe;
+    --ok: #16a34a; --warn: #dc2626; --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
+    color: #fff; display: grid; place-items: center; font-size: 20px; font-weight: 700;
+  }
+  h1 { font-size: 20px; margin: 0; }
+  .sub { color: var(--sub); font-size: 13px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 22px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 14px; }
+  .row { display: flex; align-items: center; gap: 12px; margin: 10px 0; flex-wrap: wrap; }
+  .row label { width: 130px; color: var(--sub); flex-shrink: 0; }
+  select, input[type=text], input[type=number] {
+    flex: 1; min-width: 140px; padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: 8px; font-size: 14px; background: #fff; color: var(--ink);
+  }
+  input[type=range] { flex: 1; }
+  .hint { color: var(--sub); font-size: 12.5px; margin: 4px 0 0 142px; }
+  .switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: #cdd3db; border-radius: 24px;
+    cursor: pointer; transition: .2s;
+  }
+  .slider:before {
+    content: ""; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px;
+    background: #fff; border-radius: 50%; transition: .2s;
+  }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider:before { transform: translateX(20px); }
+  .btn {
+    padding: 9px 22px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 14px; background: var(--accent); color: #fff;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.ghost { background: var(--accent-soft); color: var(--accent); }
+  .status { font-size: 13px; }
+  .status.ok { color: var(--ok); }
+  .status.bad { color: var(--warn); }
+  .val { color: var(--accent); font-weight: 600; }
+  textarea {
+    width: 100%; min-height: 64px; padding: 10px; border: 1px solid var(--line);
+    border-radius: 8px; font: inherit; resize: vertical;
+  }
+  #result {
+    margin-top: 10px; padding: 10px 12px; background: var(--accent-soft);
+    border-radius: 8px; display: none; white-space: pre-wrap;
+  }
+  .saved {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%) translateY(-60px);
+    background: var(--ok); color: #fff; padding: 8px 20px; border-radius: 20px;
+    font-size: 13px; transition: .3s; opacity: 0;
+  }
+  .saved.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  footer { text-align: center; color: var(--sub); font-size: 12px; margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">译</div>
+    <div>
+      <h1>fanyi 本地翻译</h1>
+      <div class="sub">翻译全程在本地完成，不联网 · <span id="srvStatus" class="status">连接中…</span></div>
+    </div>
+  </header>
+
+  <div class="card" id="modelCard">
+    <h2>模型</h2>
+    <div class="row">
+      <label>模型状态</label>
+      <span id="modelState" class="status">检查中…</span>
+    </div>
+    <div class="hint" id="modelPath" style="margin-top:2px"></div>
+    <div id="dlArea" style="display:none">
+      <div class="row" style="margin-top:10px">
+        <label>下载镜像</label>
+        <select id="mirrorSel" style="flex:1">
+          <option value="auto">自动（推荐：失败自动切换）</option>
+          <option value="hf-mirror">仅 hf-mirror.com（国内快）</option>
+          <option value="huggingface">仅 huggingface.co（官方）</option>
+          <option value="custom">自定义地址…</option>
+        </select>
+      </div>
+      <div class="row" id="customRow" style="display:none">
+        <label>自定义镜像</label>
+        <input type="text" id="customUrl" placeholder="完整 GGUF 下载地址（失败自动回退内置源）">
+      </div>
+      <div class="row">
+        <button class="btn" id="dlBtn">下 载 模 型（约 1.9 GB）</button>
+        <button class="btn ghost" id="dlCancel" style="display:none">取 消</button>
+      </div>
+      <div class="row" id="dlProgRow" style="display:none">
+        <label>下载进度</label>
+        <input type="range" min="0" max="100" value="0" id="dlBar" disabled style="flex:1">
+        <span class="val" id="dlPct">0%</span>
+      </div>
+      <div class="hint" id="dlHint" style="margin-left:142px">多镜像自动切换：hf-mirror.com → huggingface.co，支持断点续传</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>语言方向</h2>
+    <div class="row">
+      <label>源语言（从）</label>
+      <select id="source_lang"></select>
+    </div>
+    <div class="row">
+      <label>目标语言（到）</label>
+      <select id="target_lang"></select>
+    </div>
+    <div class="hint">默认英译汉。混元翻译模型支持中、英、日、韩、法、德、西、俄、葡、意、阿、泰、越等 30+ 语言。</div>
+  </div>
+
+  <div class="card">
+    <h2>自动翻译</h2>
+    <div class="row">
+      <label>自动启动翻译</label>
+      <span class="switch"><input type="checkbox" id="auto_translate"><span class="slider"></span></span>
+      <span class="hint" style="margin-left:0">页面外文比例超过阈值时自动翻译（软件运行期间对所有页面生效）</span>
+    </div>
+    <div class="row">
+      <label>外文比例阈值</label>
+      <input type="range" id="foreign_ratio" min="10" max="95" step="5" value="60">
+      <span class="val" id="ratio_val">60%</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>翻译质量与性能</h2>
+    <div class="row">
+      <label>精准模式</label>
+      <span class="switch"><input type="checkbox" id="precision_mode"><span class="slider"></span></span>
+      <span class="hint" style="margin-left:0">贪心解码，同一文本结果完全一致，推荐开启以获得稳定翻译</span>
+    </div>
+    <div class="row">
+      <label>并行翻译段数</label>
+      <input type="number" id="max_parallel" min="1" max="32" value="8">
+      <span class="hint" style="margin-left:0">越大整页越快，内存略增；1-4 适合低配电脑</span>
+    </div>
+    <div class="row">
+      <label>空闲自动卸载</label>
+      <input type="number" id="idle_unload_min" min="0" max="120" value="10">
+      <span class="hint" style="margin-left:0">分钟。0 = 常驻内存不卸载</span>
+    </div>
+    <div class="row">
+      <label>上下文大小</label>
+      <input type="number" id="ctx_tokens" min="4096" max="65536" step="4096" value="16384">
+      <span class="hint" style="margin-left:0">KV 缓存预算；影响单批可翻译的文本量</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>高级</h2>
+    <div class="row">
+      <label>模型路径</label>
+      <input type="text" id="model_path" placeholder="留空自动探测 models/Hy-MT2-1.8B-Q8_0.gguf">
+    </div>
+    <div class="row">
+      <label>服务端口</label>
+      <input type="number" id="port" min="1" max="65535" value="8765">
+      <span class="hint" style="margin-left:0">修改后需重启 fanyi-server 生效</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>试一试</h2>
+    <textarea id="sample" placeholder="输入一段外文，点击翻译测试服务是否正常…">The quick brown fox jumps over the lazy dog.</textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="testBtn">翻 译 测 试</button>
+      <span id="testTime" class="hint" style="margin-left:0"></span>
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <div class="row" style="gap:0">
+    <button class="btn" id="saveBtn">保 存 设 置</button>
+    <span class="hint" style="margin-left:14px">浏览器扩展安装方法见项目 README.md</span>
+  </div>
+
+  <footer>服务仅监听本机 127.0.0.1 · fanyi-server</footer>
+</div>
+<div class="saved" id="saved">✓ 已保存</div>
+
+<script>
+const LANGS = [
+  ["zh", "中文"], ["zh-TW", "繁体中文"], ["en", "英语"], ["ja", "日语"], ["ko", "韩语"],
+  ["fr", "法语"], ["de", "德语"], ["es", "西班牙语"], ["ru", "俄语"], ["pt", "葡萄牙语"],
+  ["it", "意大利语"], ["ar", "阿拉伯语"], ["th", "泰语"], ["vi", "越南语"], ["id", "印尼语"],
+  ["ms", "马来语"], ["hi", "印地语"], ["tr", "土耳其语"], ["pl", "波兰语"], ["nl", "荷兰语"],
+  ["uk", "乌克兰语"],
+];
+for (const [code, name] of LANGS) {
+  for (const id of ["source_lang", "target_lang"]) {
+    const opt = document.createElement("option");
+    opt.value = code; opt.textContent = name;
+    document.getElementById(id).appendChild(opt);
+  }
+}
+document.getElementById("source_lang").value = "en";
+document.getElementById("target_lang").value = "zh";
+
+const $ = id => document.getElementById(id);
+
+async function loadStatus() {
+  try {
+    const r = await fetch("/v1/status");
+    const j = await r.json();
+    const el = $("srvStatus");
+    if (j.model_loaded) { el.textContent = "模型已加载"; el.className = "status ok"; }
+    else if (j.model_failed) { el.textContent = "模型加载失败（见服务日志）"; el.className = "status bad"; }
+    else { el.textContent = "服务运行中（模型待加载）"; el.className = "status ok"; }
+  } catch {
+    $("srvStatus").textContent = "无法连接服务"; $("srvStatus").className = "status bad";
+  }
+}
+
+async function loadConfig() {
+  const j = await (await fetch("/v1/config")).json();
+  $("source_lang").value = j.source_lang || "en";
+  $("target_lang").value = j.target_lang || "zh";
+  $("auto_translate").checked = !!j.auto_translate;
+  const pct = Math.round((j.foreign_ratio ?? 0.6) * 100);
+  $("foreign_ratio").value = pct; $("ratio_val").textContent = pct + "%";
+  $("precision_mode").checked = !!j.precision_mode;
+  $("max_parallel").value = j.max_parallel ?? 8;
+  $("idle_unload_min").value = j.idle_unload_min ?? 10;
+  $("ctx_tokens").value = j.ctx_tokens ?? 16384;
+  $("model_path").value = j.model_path || "";
+  $("port").value = j.port ?? 8765;
+}
+
+$("foreign_ratio").addEventListener("input", e => $("ratio_val").textContent = e.target.value + "%");
+
+/* ---------- 模型下载 ---------- */
+let dlTimer = null;
+$("mirrorSel").addEventListener("change", () => {
+  $("customRow").style.display = $("mirrorSel").value === "custom" ? "flex" : "none";
+});
+
+function stopDlPoll() { if (dlTimer) { clearInterval(dlTimer); dlTimer = null; } }
+
+function pollDownload() {
+  if (dlTimer) return;
+  dlTimer = setInterval(async () => {
+    try {
+      const st = (await (await fetch("/v1/status")).json()).model_download || {};
+      if (st.active) {
+        $("dlProgRow").style.display = "flex";
+        $("dlCancel").style.display = "";
+        $("dlBtn").disabled = true;
+        if (st.progress >= 0) { $("dlBar").value = st.progress; $("dlPct").textContent = st.progress + "%"; }
+        else { $("dlPct").textContent = "…"; }
+        $("dlHint").textContent = "正在从 " + (st.mirror || "").replace("https://", "").split("/")[0] + " 下载（失败自动切换镜像）";
+        return;
+      }
+      stopDlPoll();
+      $("dlCancel").style.display = "none";
+      $("dlBtn").disabled = false;
+      if (st.succeeded) {
+        $("dlArea").style.display = "none";
+        $("dlHint").textContent = "";
+        $("modelState").textContent = "模型已安装并加载 ✓";
+        $("modelState").className = "status ok";
+      } else if (st.error && st.error !== "已取消") {
+        $("dlHint").textContent = "✗ " + st.error;
+      }
+      loadStatus();
+    } catch {}
+  }, 1000);
+}
+
+$("dlBtn").addEventListener("click", async () => {
+  const body = {};
+  const m = $("mirrorSel").value;
+  if (m === "custom") body.url = $("customUrl").value.trim();
+  else if (m !== "auto") body.mirror = m;
+  $("dlHint").textContent = "";
+  const r = await fetch("/v1/model/download", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!j.ok) { $("dlHint").textContent = "✗ " + (j.error || "启动失败"); return; }
+  $("dlProgRow").style.display = "flex";
+  $("dlCancel").style.display = "";
+  $("dlBtn").disabled = true;
+  pollDownload();
+});
+
+$("dlCancel").addEventListener("click", async () => {
+  await fetch("/v1/model/download", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cancel: true }) });
+});
+
+async function refreshModelCard() {
+  try {
+    const st = await (await fetch("/v1/status")).json();
+    const state = $("modelState");
+    if (st.model_loaded) { state.textContent = "已安装并加载 ✓"; state.className = "status ok"; }
+    else if (st.model_installed) { state.textContent = "已安装（首次翻译时自动加载）"; state.className = "status ok"; }
+    else {
+      state.textContent = "未安装"; state.className = "status bad";
+      $("dlArea").style.display = "";
+    }
+    if (st.model_installed_path) $("modelPath").textContent = "路径：" + st.model_installed_path;
+    if (st.model_download && st.model_download.active) {
+      $("dlArea").style.display = ""; pollDownload();
+    }
+  } catch {}
+}
+
+$("saveBtn").addEventListener("click", async () => {
+  const body = {
+    source_lang: $("source_lang").value,
+    target_lang: $("target_lang").value,
+    auto_translate: $("auto_translate").checked,
+    foreign_ratio: $("foreign_ratio").value / 100,
+    precision_mode: $("precision_mode").checked,
+    max_parallel: parseInt($("max_parallel").value) || 8,
+    idle_unload_min: parseInt($("idle_unload_min").value) || 0,
+    ctx_tokens: parseInt($("ctx_tokens").value) || 16384,
+    model_path: $("model_path").value.trim(),
+    port: parseInt($("port").value) || 8765,
+  };
+  const r = await fetch("/v1/config", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.ok) {
+    const s = $("saved"); s.classList.add("show");
+    setTimeout(() => s.classList.remove("show"), 1600);
+  }
+  loadStatus();
+});
+
+$("testBtn").addEventListener("click", async () => {
+  const btn = $("testBtn"); btn.disabled = true; btn.textContent = "翻译中…";
+  $("result").style.display = "none";
+  const t0 = performance.now();
+  try {
+    const r = await fetch("/v1/translate", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments: [$("sample").value] }) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const text = await r.text();
+    let out = "";
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const j = JSON.parse(line);
+      if (j.text) out += j.text;
+    }
+    const ms = Math.round(performance.now() - t0);
+    $("testTime").textContent = `耗时 ${ms} ms`;
+    $("result").textContent = out || "（空结果）";
+    $("result").style.display = "block";
+  } catch (e) {
+    $("testTime").textContent = "";
+    $("result").textContent = "翻译失败：" + e.message + "（首次翻译需加载模型，约需 1-3 秒）";
+    $("result").style.display = "block";
+  }
+  btn.disabled = false; btn.textContent = "翻 译 测 试";
+  loadStatus();
+});
+
+loadConfig();
+refreshModelCard();
+loadStatus();
+setInterval(loadStatus, 5000);
+</script>
+</body>
+</html>

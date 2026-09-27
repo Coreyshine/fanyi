@@ -1,0 +1,93 @@
+name: build
+
+# 三平台自动构建：每次推送自动编译 Windows / Linux / macOS 安装包
+# 推送 v* 标签（如 git tag v1.0.1 && git push --tags）会自动创建 GitHub Release 并附上三平台包
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+            bindir: build/Release
+            archive: zip
+          - os: ubuntu-22.04        # 较老 glibc，兼容更多发行版
+            name: linux-x64
+            bindir: build
+            archive: tar.gz
+          - os: macos-latest        # Apple Silicon
+            name: macos-arm64
+            bindir: build
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive     # 拉取 llama.cpp v0.5.0
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target fanyi-server fanyi-cli
+
+      - name: Package (Linux / macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p stage
+          cp "${{ matrix.bindir }}/fanyi-server" stage/
+          cp "${{ matrix.bindir }}/fanyi-cli" stage/
+          cp "${{ matrix.bindir }}/settings.html" stage/
+          cp -r extension stage/
+          cp -r extension-firefox stage/ 2>/dev/null || true
+          cp README.md docs/USAGE.md docs/BUILD.md stage/ 2>/dev/null || true
+          cd stage
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            zip -rq ../fanyi-${{ matrix.name }}.zip .
+          else
+            tar czf ../fanyi-${{ matrix.name }}.tar.gz .
+          fi
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path stage | Out-Null
+          Copy-Item build/Release/fanyi-server.exe stage/
+          Copy-Item build/Release/fanyi-cli.exe stage/
+          Copy-Item build/Release/settings.html stage/
+          Copy-Item -Recurse -Force extension stage/
+          Copy-Item -Recurse -Force extension-firefox stage/ -ErrorAction SilentlyContinue
+          Copy-Item README.md stage/ -ErrorAction SilentlyContinue
+          Copy-Item docs/USAGE.md stage/ -ErrorAction SilentlyContinue
+          Copy-Item docs/BUILD.md stage/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path stage/* -DestinationPath fanyi-windows-x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fanyi-${{ matrix.name }}
+          path: fanyi-${{ matrix.name }}.${{ matrix.archive }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*

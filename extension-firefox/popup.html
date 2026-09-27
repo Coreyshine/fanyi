@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: dark; }
+  body {
+    width: 250px; margin: 0; padding: 12px 14px;
+    background: #1c2028; color: #e8ebf0;
+    font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+  .logo {
+    width: 22px; height: 22px; border-radius: 6px; background: #2563eb;
+    display: grid; place-items: center; font-size: 13px; font-weight: 700;
+  }
+  .title { font-weight: 700; font-size: 13.5px; }
+  .srv { margin-left: auto; font-size: 11px; color: #8a93a3; display: flex; align-items: center; gap: 4px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; }
+  .dot.on { background: #31d07e; }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; background: #262b34; border-radius: 8px; margin-bottom: 7px;
+  }
+  .row .label { font-size: 13px; }
+  .row .sub { display: block; font-size: 11px; color: #8a93a3; }
+  .switch { position: relative; width: 38px; height: 21px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #3a4150; border-radius: 21px; cursor: pointer; transition: .2s; }
+  .slider:before { content: ""; position: absolute; width: 15px; height: 15px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .switch input:checked + .slider { background: #2563eb; }
+  .switch input:checked + .slider:before { transform: translateX(17px); }
+  .switch input:disabled + .slider { opacity: .4; }
+  button {
+    width: 100%; padding: 8px 0; border: none; border-radius: 8px; cursor: pointer;
+    background: #262b34; color: #e8ebf0; font-size: 12.5px;
+  }
+  button:hover { background: #313845; }
+  .foot { margin-top: 8px; text-align: center; font-size: 11px; color: #8a93a3; }
+  .warn { font-size: 11.5px; color: #ef4444; margin: 2px 0 8px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="logo">译</div>
+    <div class="title">fanyi 本地翻译</div>
+    <div class="srv"><span class="dot" id="srvDot"></span><span id="srvText">检查中</span></div>
+  </div>
+  <div class="warn" id="warn" style="display:none"></div>
+  <div class="row">
+    <span class="label">本页翻译<span class="sub" id="pageSub">当前页面</span></span>
+    <span class="switch"><input type="checkbox" id="pageToggle"><span class="slider"></span></span>
+  </div>
+  <div class="row">
+    <span class="label">翻译总开关<span class="sub">暂停后所有页面不自动翻</span></span>
+    <span class="switch"><input type="checkbox" id="globalToggle"><span class="slider"></span></span>
+  </div>
+  <button id="settingsBtn">打开设置页（语言方向 / 阈值 / 模型）</button>
+  <div class="foot" id="dirText"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

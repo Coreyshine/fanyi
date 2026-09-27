@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>fanyi 扩展</title>
+<style>
+  body { font: 15px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         max-width: 640px; margin: 40px auto; padding: 0 20px; color: #1c2330; }
+  h1 { font-size: 20px; }
+  code { background: #eef1f5; padding: 2px 6px; border-radius: 5px; }
+  a.btn { display: inline-block; margin: 8px 0; padding: 9px 22px; background: #2563eb;
+          color: #fff; border-radius: 8px; text-decoration: none; font-size: 14px; }
+  .st { padding: 10px 14px; border-radius: 8px; margin: 12px 0; }
+  .ok { background: #e8f7ee; color: #16a34a; }
+  .bad { background: #fdecec; color: #dc2626; }
+  ol li { margin: 6px 0; }
+</style>
+</head>
+<body>
+<h1>fanyi 本地翻译 · 扩展</h1>
+<div id="status" class="st">检查服务中…</div>
+<a class="btn" href="http://127.0.0.1:8765/settings" target="_blank">打开翻译设置页</a>
+<h3>使用前提</h3>
+<ol>
+  <li>fanyi-server 已在本机运行（托盘有 <b>译</b> 图标）</li>
+  <li>打开任意外文网页，外文占比超过阈值（默认 60%）即自动翻译</li>
+  <li>页面右上角悬浮 <b>译</b> 开关：点击翻译/还原，可拖动</li>
+</ol>
+<script>
+fetch("http://127.0.0.1:8765/v1/status").then(r => r.json()).then(j => {
+  const el = document.getElementById("status");
+  el.className = "st ok";
+  el.textContent = "✓ fanyi-server 运行中（" + j.version + "，模型" +
+    (j.model_loaded ? "已加载" : "待加载") + "，翻译方向 " + j.source_lang + " → " + j.target_lang + "）";
+}).catch(() => {
+  const el = document.getElementById("status");
+  el.className = "st bad";
+  el.textContent = "✗ 连不上 fanyi-server —— 请先启动 fanyi-server（见项目 README.md）";
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>输入翻译测试页</title>
+<script src="shim.js"></script>
+<style>
+  :root { color-scheme: light; }
+  html, body { background: #fff; color: #1a1a1a; }
+  body { font: 15px/1.7 -apple-system, "PingFang SC", sans-serif; max-width: 640px; margin: 36px auto; padding: 0 20px; }
+  input[type=text], textarea { width: 100%; padding: 10px; border: 1px solid #cdd3db; border-radius: 8px; font: inherit; box-sizing: border-box; }
+  textarea { min-height: 72px; }
+  .editable { border: 1px dashed #b8c0cc; border-radius: 8px; min-height: 60px; padding: 10px; margin-top: 20px; }
+  .demo { background: #f0f5ff; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; }
+  code { background: #eef1f5; padding: 2px 6px; border-radius: 5px; }
+</style>
+</head>
+<body>
+<div class="demo">
+  在下面的输入框里点一下（让光标进去），再点这个按钮模拟右键菜单「输入翻译内容」：
+  <button onclick="__fanyiMenuClick()">模拟右键菜单</button>
+</div>
+
+<p>单行输入框：</p>
+<input type="text" id="box1" placeholder="点这里获得焦点，再点上方按钮">
+
+<p>多行文本框：</p>
+<textarea id="box2" placeholder="或在这里测试"></textarea>
+
+<p>富文本编辑区（contenteditable）：</p>
+<div class="editable" id="box3" contenteditable="true"></div>
+</body>
+</html>
