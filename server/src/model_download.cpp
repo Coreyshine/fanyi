@@ -45,9 +45,9 @@ std::vector<std::string> model_default_mirrors() {
 
 static long long file_size(const std::string &path) {
 #ifdef _WIN32
-    WIN32_FILE_ATTRIBUTE_DATA fa;
-    if (!GetFileAttributesExA(path.c_str(), GET_FILE_ATTRIBUTES_EX_INFO, &fa)) return -1;
-    return ((long long)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
+    struct _stat64 st;
+    if (_stat64(path.c_str(), &st) != 0) return -1;
+    return (long long)st.st_size;
 #else
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return -1;
