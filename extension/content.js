@@ -287,6 +287,8 @@
       S.on = false;
       S.queue.length = 0; S.queued.clear();
       for (const [node, orig] of S.origs) if (node.isConnected) node.nodeValue = orig;
+      S.origs.clear();          /* 关键：还原后节点已回到原文，清掉记录才能再次翻译 */
+      S.doneCount = 0; S.scanCount = 0;
       updateFloat();
     } else {
       S.on = true;
