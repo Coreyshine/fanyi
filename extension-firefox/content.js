@@ -7,6 +7,7 @@
   'use strict';
   if (window.__fanyiLoaded) return;
   window.__fanyiLoaded = true;
+  window.__fanyiVersion = chrome.runtime.getManifest().version;
 
   /* ---------- 常量 ---------- */
   const CHUNK = 8;                  // 每请求段数
@@ -23,6 +24,7 @@
     cfg: null,            // {enabled, target_lang, auto_translate, foreign_ratio, ...}
     serverUp: false,
     on: false,            // 本页翻译开关
+    outdated: false,      // 扩展更新后旧页面等待刷新
     origs: new Map(),     // TextNode -> 原文
     queue: [],            // {node, text, prio, seq}
     queued: new Set(),    // node 去重
@@ -222,6 +224,7 @@
         .pill.on .dot { background:#31d07e; }
         .pill.busy .dot { background:#3b82f6;animation:blink 1s infinite; }
         .pill.err .dot { background:#ef4444; }
+        .pill.upd .dot { background:#f59e0b; }
         .pill.off .dot { background:#8a93a3; }
         @keyframes blink { 50% { opacity:.3; } }
         .label { white-space:nowrap; }
@@ -264,6 +267,7 @@
     if (!S.floatPill || !S.cfg) return;
     const pill = S.floatPill, label = S.floatLabel;
     pill.className = 'pill';
+    if (S.outdated) { pill.classList.add('upd'); label.textContent = '扩展已更新 · 点击刷新页面'; return; }
     if (mode === 'error') { pill.classList.add('err'); label.textContent = '服务未运行'; return; }
     if (S.cfg.enabled === false) { pill.classList.add('off'); label.textContent = '已停用'; return; }
     if (S.translating) {
@@ -280,6 +284,7 @@
   }
 
   async function onFloatClick() {
+    if (S.outdated) { location.reload(); return; }   /* 扩展已更新：点击刷新页面加载新版 */
     if (!S.cfg) return;
     if (!S.serverUp) { await loadCfg(); if (!S.serverUp) return; }
     if (S.on) {
@@ -612,11 +617,20 @@
   }
 
   /* 右键菜单消息（顶层帧与子帧都响应；Chromium/Firefox 原生菜单入口） */
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.type === 'inputTranslate') {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (!msg) return;
+    if (msg.type === 'inputTranslate') {
       const act = document.activeElement;
       if (isEditable(act)) lastEditable = act;
       try { openInputTranslate(); } catch (e) { console.error('[fanyi] input panel:', e); }
+    } else if (msg.type === 'extensionUpdated') {
+      /* 装载的是旧版脚本而扩展已更新：亮出「点击刷新」提示（新版脚本版本一致则忽略） */
+      if (window.top === window && msg.version &&
+          msg.version !== chrome.runtime.getManifest().version) {
+        S.outdated = true;
+        updateFloat();
+      }
+      sendResponse && sendResponse({ ok: true });
     }
   });
 

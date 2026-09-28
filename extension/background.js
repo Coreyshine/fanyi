@@ -12,7 +12,31 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "输入翻译内容",
     contexts: ["editable"],
   });
+  /* 安装/重载后，自动给所有已打开的网页注入脚本——旧页面无需手动刷新 */
+  injectIntoExistingTabs();
 });
+
+/* 向所有已打开的 http(s) 标签页注入 content script，并通知版本变化。
+   已有旧脚本的页面（版本号不一致）会把悬浮开关变为「点击刷新」提示。 */
+async function injectIntoExistingTabs() {
+  const version = chrome.runtime.getManifest().version;
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({});
+  } catch {
+    return;
+  }
+  for (const t of tabs) {
+    if (t.id == null) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: t.id, allFrames: true },
+        files: ["content.js"],
+      });
+      chrome.tabs.sendMessage(t.id, { type: "extensionUpdated", version }, () => void chrome.runtime.lastError);
+    } catch {}   /* chrome:// 等特殊页面无法注入，忽略 */
+  }
+}
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== "fanyi-input-translate" || tab?.id == null) return;
