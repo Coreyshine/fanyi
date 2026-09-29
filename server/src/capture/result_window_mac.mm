@@ -86,6 +86,7 @@ void result_window_show(const std::string &original,
     NSString *nsTarget = [NSString stringWithUTF8String:target_name.c_str()];
 
     dispatch_async(dispatch_get_main_queue(), ^{
+        @try {
         @autoreleasepool {
             FanyiPanel *w = [[FanyiPanelEsc alloc]
                 initWithContentRect:NSMakeRect(0, 0, 340, 150)
@@ -143,6 +144,10 @@ void result_window_show(const std::string &original,
             [box installObservers];
             [w makeKeyAndOrderFront:nil];
             [w orderFrontRegardless];
+        }
+        } @catch (NSException *e) {
+            // 浮窗显示失败绝不能让常驻服务崩溃
+            NSLog(@"fanyi result window error: %@", e.reason);
         }
     });
 }

@@ -52,6 +52,36 @@ fanyi 本地翻译 — macOS 安装包（约几 MB，模型首次使用时下载
      Firefox 选择 Resources/extension-firefox 文件夹
 EOF
 
+# ---- 把依赖的 dylibs 打入包内（自包含，不依赖构建目录）----
+FW="$APP/Contents/Frameworks"
+mkdir -p "$FW"
+BIN="$APP/Contents/MacOS/fanyi-server"
+DYLIB_DIR="$PWD/build/bin"
+
+copy_dylib_tree() {
+  local bin="$1" lib name src target
+  for lib in $(otool -L "$bin" | tail -n +2 | awk '{print $1}'); do
+    case "$lib" in
+      /System/*|/usr/lib/*) continue ;;
+    esac
+    name=$(basename "$lib")
+    target="$FW/$name"
+    [ -f "$target" ] && continue
+    case "$lib" in
+      @rpath/*) src="$DYLIB_DIR/$name" ;;
+      *)        src="$lib" ;;
+    esac
+    [ -f "$src" ] || { echo "缺 dylib: $lib"; exit 1; }
+    cp "$src" "$target"
+    install_name_tool -change "$lib" "@rpath/$name" "$bin"
+    install_name_tool -id "@rpath/$name" "$target"
+    copy_dylib_tree "$target"          # 递归处理 dylib 自身依赖
+  done
+}
+copy_dylib_tree "$BIN"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$BIN" 2>/dev/null || true
+echo "已打包 dylibs: $(ls "$FW" | wc -l | tr -d ' ') 个"
+
 # ---- 代码签名：Developer ID > Apple Development > ad-hoc ----
 # 注：首次在脚本环境签名时，macOS 可能弹出钥匙串授权框，请点「始终允许」；
 #     若无交互（远程/后台会话），签名会失败并自动降级 ad-hoc（app 仍可用）。
@@ -60,16 +90,23 @@ IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/De
 SIGNED=no
 if [ -n "${IDENTITY:-}" ]; then
     echo "签名证书: $IDENTITY"
-    if codesign --force --options runtime --entitlements scripts/fanyi.entitlements --sign "$IDENTITY" "$APP" 2>&1; then
-        SIGNED=yes
-    else
-        echo "⚠ 证书签名失败（钥匙串授权或证书链问题），降级 ad-hoc"
-    fi
+    codesign --force --options runtime --entitlements scripts/fanyi.entitlements --sign "$IDENTITY" "$FW"/*.dylib 2>&1
+    # app 签名重试 3 次（钥匙串授权偶发抖动）
+    for attempt in 1 2 3; do
+        if codesign --force --options runtime --entitlements scripts/fanyi.entitlements --sign "$IDENTITY" "$APP" 2>&1; then
+            SIGNED=yes
+            break
+        fi
+        echo "签名第 $attempt 次失败，重试…"
+        sleep 2
+    done
+    [ "$SIGNED" = yes ] || echo "⚠ 证书签名失败，降级 ad-hoc"
 fi
 if [ "$SIGNED" != yes ]; then
+    codesign --force --sign - "$FW"/*.dylib
     codesign --force --sign - "$APP"
 fi
-codesign --verify --strict "$APP" && echo "✓ 签名校验通过（$([ $SIGNED = yes ] && echo 证书签名 || echo ad-hoc)）"
+codesign --verify --strict --deep "$APP" && echo "✓ 签名校验通过（$([ $SIGNED = yes ] && echo 证书签名 || echo ad-hoc)）"
 
 cd dist
 
