@@ -32,6 +32,22 @@ jobs:
         with:
           submodules: recursive     # 拉取 llama.cpp v0.5.0
 
+      - name: Download onnxruntime (OCR)
+        shell: bash
+        run: |
+          V=1.20.1
+          mkdir -p third_party/onnxruntime
+          case "${{ runner.os }}" in
+            Windows)
+              curl -sL -o ort.zip "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-win-x64-$V.zip"
+              tar xf ort.zip -C third_party/onnxruntime ;;
+            macOS)
+              curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-osx-arm64-$V.tgz" | tar xz -C third_party/onnxruntime ;;
+            Linux)
+              curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-linux-x64-$V.tgz" | tar xz -C third_party/onnxruntime ;;
+          esac
+          ls third_party/onnxruntime
+
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
@@ -49,6 +65,8 @@ jobs:
           cp -r extension stage/
           cp -r extension-firefox stage/ 2>/dev/null || true
           cp README.md docs/USAGE.md docs/BUILD.md stage/ 2>/dev/null || true
+          # OCR 运行库随包
+          cp third_party/onnxruntime/lib/libonnxruntime*.so* stage/ 2>/dev/null || true
           cd stage
           if [ "${{ matrix.archive }}" = "zip" ]; then
             zip -rq ../fanyi-${{ matrix.name }}.zip .
@@ -69,6 +87,7 @@ jobs:
           Copy-Item README.md stage/ -ErrorAction SilentlyContinue
           Copy-Item docs/USAGE.md stage/ -ErrorAction SilentlyContinue
           Copy-Item docs/BUILD.md stage/ -ErrorAction SilentlyContinue
+          Copy-Item third_party/onnxruntime/lib/onnxruntime.dll stage/ -ErrorAction SilentlyContinue
           Compress-Archive -Path stage/* -DestinationPath fanyi-windows-x64.zip
 
       - name: Upload artifact

@@ -68,7 +68,8 @@ copy_dylib_tree() {
     target="$FW/$name"
     [ -f "$target" ] && continue
     case "$lib" in
-      @rpath/*) src="$DYLIB_DIR/$name" ;;
+      @rpath/*) src="$DYLIB_DIR/$name"
+                [ -f "$src" ] || src="$PWD/third_party/onnxruntime/lib/$name" ;;
       *)        src="$lib" ;;
     esac
     [ -f "$src" ] || { echo "缺 dylib: $lib"; exit 1; }
