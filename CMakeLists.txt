@@ -76,6 +76,7 @@ add_executable(fanyi-server
     server/src/model_download.cpp
     ${FANYI_TRAY_SRC}
     ${FANYI_CAPTURE_SRC}
+    server/assets/settings.html
 )
 target_include_directories(fanyi-server PRIVATE server/src)
 target_link_libraries(fanyi-server PRIVATE fanyi_core httplib)
@@ -96,7 +97,7 @@ else()
     endif()
 endif()
 
-# settings page next to the binary
+# settings page next to the binary（列入源文件：改动即触发重链接并重新复制）
 add_custom_command(TARGET fanyi-server POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/server/assets/settings.html
