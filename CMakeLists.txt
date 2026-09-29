@@ -90,7 +90,8 @@ else()
 endif()
 
 if(EXISTS "${ORT_DIR}/include/onnxruntime_cxx_api.h")
-    list(APPEND FANYI_CAPTURE_SRC server/src/ocr/rapidocr.cpp)
+    list(APPEND FANYI_CAPTURE_SRC server/src/ocr/rapidocr.cpp
+                                  server/src/ocr/stb_impl.cpp)
 endif()
 
 add_executable(fanyi-server

@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <algorithm>
 #include <string>
 #include <thread>
 
@@ -82,8 +83,8 @@ static DWORD WINAPI window_thread(LPVOID param) {
     POINT pt; GetCursorPos(&pt);
     int W = 360, H = 150;
     int x = pt.x + 12, y = pt.y - H - 10;
-    x = max(8, min(x, GetSystemMetrics(SM_CXSCREEN) - W - 8));
-    y = max(8, min(y, GetSystemMetrics(SM_CYSCREEN) - H - 8));
+    x = (std::max)(8, (std::min)(x, GetSystemMetrics(SM_CXSCREEN) - W - 8));
+    y = (std::max)(8, (std::min)(y, GetSystemMetrics(SM_CYSCREEN) - H - 8));
 
     HWND h = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, CLASS_NAME, NULL,
                              WS_POPUP | WS_BORDER, x, y, W, H, NULL, NULL,
