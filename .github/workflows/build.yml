@@ -55,7 +55,7 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release --parallel --target fanyi-server fanyi-cli
+        run: cmake --build build --config Release --parallel ${{ matrix.name == 'linux-x64' && '2' || '8' }} --target fanyi-server fanyi-cli
 
       - name: Package (Linux / macOS)
         if: runner.os != 'Windows'

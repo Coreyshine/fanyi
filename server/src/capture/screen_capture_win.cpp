@@ -35,9 +35,9 @@ static void send_win_shift_s() {
 static bool clipboard_dib_to_rgb(std::vector<unsigned char> &rgb, int &w, int &h) {
     if (!OpenClipboard(NULL)) return false;
     bool ok = false;
-    HANDLE h = GetClipboardData(CF_DIB);
-    if (h) {
-        BITMAPINFO *bi = (BITMAPINFO *)GlobalLock(h);
+    HANDLE hData = GetClipboardData(CF_DIB);
+    if (hData) {
+        BITMAPINFO *bi = (BITMAPINFO *)GlobalLock(hData);
         if (bi && bi->bmiHeader.biCompression == BI_RGB &&
             (bi->bmiHeader.biBitCount == 24 || bi->bmiHeader.biBitCount == 32)) {
             w = bi->bmiHeader.biWidth;
@@ -58,7 +58,7 @@ static bool clipboard_dib_to_rgb(std::vector<unsigned char> &rgb, int &w, int &h
             }
             ok = true;
         }
-        GlobalUnlock(h);
+        GlobalUnlock(hData);
     }
     CloseClipboard();
     return ok;

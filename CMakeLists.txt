@@ -108,7 +108,7 @@ if(FANYI_ORT_LIB)
     target_link_libraries(fanyi-server PRIVATE "${FANYI_ORT_LIB}")
     set(CMAKE_BUILD_RPATH "${ORT_DIR}/lib")
     if(UNIX AND NOT APPLE)
-        target_link_options(fanyi-server PRIVATE -Wl,-rpath,'$ORIGIN')
+        target_link_options(fanyi-server PRIVATE -Wl,-rpath,'$ORIGIN' -Wl,--no-keep-memory)
     endif()
 endif()
 

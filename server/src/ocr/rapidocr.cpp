@@ -196,10 +196,10 @@ bool ocr_ensure_loaded(const std::string &dir, std::string *err) {
         so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
 #ifdef _WIN32
-        std::wstring wdir(dir.begin(), dir.end());
-        std::wstring d = wdir + L"/" + ocr_files[0];
+        auto to_w = [](const std::string &s) { return std::wstring(s.begin(), s.end()); };
+        std::wstring d = to_w(dir) + L"/" + to_w(ocr_files[0]);
         g_det = new Ort::Session(*g_env, d.c_str(), so);
-        std::wstring r = wdir + L"/" + ocr_files[1];
+        std::wstring r = to_w(dir) + L"/" + to_w(ocr_files[1]);
         g_rec = new Ort::Session(*g_env, r.c_str(), so);
 #else
         g_det = new Ort::Session(*g_env, (dir + "/" + ocr_files[0]).c_str(), so);
