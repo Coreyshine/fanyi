@@ -49,10 +49,12 @@ jobs:
           esac
           # 拍平可能的嵌套目录
           mv third_party/onnxruntime/onnxruntime-*/* third_party/onnxruntime/ 2>/dev/null || true
+          # 裁剪调试符号：链接阶段内存峰值可降数倍
+          strip third_party/onnxruntime/lib/libonnxruntime* 2>/dev/null || true
           ls third_party/onnxruntime/include/onnxruntime_cxx_api.h
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.name == 'linux-x64' && '-DCMAKE_VERBOSE_MAKEFILE=ON' || '' }}
 
       - name: Build
         run: cmake --build build --config Release --parallel ${{ matrix.name == 'linux-x64' && '2' || '8' }} --target fanyi-server fanyi-cli
