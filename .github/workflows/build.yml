@@ -40,21 +40,20 @@ jobs:
           case "${{ runner.os }}" in
             Windows)
               curl -sL -o ort.zip "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-win-x64-$V.zip"
-              tar xf ort.zip -C third_party/onnxruntime || true
-              mv third_party/onnxruntime/onnxruntime-win-x64-$V/* third_party/onnxruntime/ 2>/dev/null || true ;;
+              python -c "import zipfile; zipfile.ZipFile('ort.zip').extractall('third_party/onnxruntime/ort_tmp')"
+              ;;
             macOS)
               curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-osx-arm64-$V.tgz" | tar xz -C third_party/onnxruntime ;;
             Linux)
               curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-linux-x64-$V.tgz" | tar xz -C third_party/onnxruntime ;;
           esac
-          # 拍平可能的嵌套目录
-          mv third_party/onnxruntime/onnxruntime-*/* third_party/onnxruntime/ 2>/dev/null || true
-          # 裁剪调试符号：链接阶段内存峰值可降数倍
-          strip third_party/onnxruntime/lib/libonnxruntime* 2>/dev/null || true
-          ls third_party/onnxruntime/include/onnxruntime_cxx_api.h
+          # 统一拍平嵌套目录（python 跨平台，不依赖 shell 通配）
+          python scripts/patch_ort.py
+          test -f third_party/onnxruntime/include/onnxruntime_cxx_api.h
+          test -d third_party/onnxruntime/lib
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.name == 'linux-x64' && '-DCMAKE_VERBOSE_MAKEFILE=ON' || '' }}
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.name == 'linux-x64' && '-DCMAKE_VERBOSE_MAKEFILE=ON' || '' }} ${{ matrix.name == 'linux-x64' && '-DCMAKE_VERBOSE_MAKEFILE=ON' || '' }}
 
       - name: Build
         run: cmake --build build --config Release --parallel ${{ matrix.name == 'linux-x64' && '2' || '8' }} --target fanyi-server fanyi-cli
