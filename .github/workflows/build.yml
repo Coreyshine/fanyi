@@ -40,13 +40,16 @@ jobs:
           case "${{ runner.os }}" in
             Windows)
               curl -sL -o ort.zip "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-win-x64-$V.zip"
-              tar xf ort.zip -C third_party/onnxruntime ;;
+              tar xf ort.zip -C third_party/onnxruntime || true
+              mv third_party/onnxruntime/onnxruntime-win-x64-$V/* third_party/onnxruntime/ 2>/dev/null || true ;;
             macOS)
               curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-osx-arm64-$V.tgz" | tar xz -C third_party/onnxruntime ;;
             Linux)
               curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-linux-x64-$V.tgz" | tar xz -C third_party/onnxruntime ;;
           esac
-          ls third_party/onnxruntime
+          # 拍平可能的嵌套目录
+          mv third_party/onnxruntime/onnxruntime-*/* third_party/onnxruntime/ 2>/dev/null || true
+          ls third_party/onnxruntime/include/onnxruntime_cxx_api.h
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
