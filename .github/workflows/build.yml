@@ -40,7 +40,7 @@ jobs:
           case "${{ runner.os }}" in
             Windows)
               curl -sL -o ort.zip "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-win-x64-$V.zip"
-              python -c "import zipfile; zipfile.ZipFile('ort.zip').extractall('third_party/onnxruntime/ort_tmp')"
+              python -c "import zipfile; zipfile.ZipFile('ort.zip').extractall('third_party/onnxruntime')"
               ;;
             macOS)
               curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-osx-arm64-$V.tgz" | tar xz -C third_party/onnxruntime ;;
