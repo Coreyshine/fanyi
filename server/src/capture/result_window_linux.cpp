@@ -13,7 +13,7 @@ namespace fanyi {
 void result_window_show(const std::string &original,
                         const std::string &translated,
                         const std::string &target_name) {
-    std::string cmd = "notify-send -a fanyi '翻译结果 (" + target_name + ")' '" +
+    std::string cmd = "notify-send -a fanyi -t 10000 '翻译结果 (" + target_name + ")' '" +
                       translated + "' 2>/dev/null &";
     // 简单转义单引号
     std::string safe;

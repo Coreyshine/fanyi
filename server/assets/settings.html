@@ -117,6 +117,24 @@
     <div class="hint" id="dlHint" style="margin-left:0;margin-top:6px">多镜像自动切换：hf-mirror.com → huggingface.co，支持断点续传</div>
   </div>
 
+  <div class="card" id="ocrCard">
+    <h2>截图识别（OCR）</h2>
+    <div class="row">
+      <label>组件状态</label>
+      <span id="ocrState" class="status">检查中…</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="ocrDlBtn" style="display:none">下 载 OCR 模 型（约 15 MB）</button>
+      <button class="btn ghost" id="ocrCancel" style="display:none">取 消</button>
+    </div>
+    <div class="row" id="ocrProgRow" style="display:none">
+      <label>下载进度</label>
+      <input type="range" min="0" max="100" value="0" id="ocrBar" disabled style="flex:1">
+      <span class="val" id="ocrPct">0%</span>
+    </div>
+    <div class="hint" id="ocrHint" style="margin-left:0;margin-top:6px">托盘「截图翻译」依赖本组件；三镜像自动切换（det 4.7MB + rec 10.9MB + 字典）</div>
+  </div>
+
   <div class="card">
     <h2>语言方向</h2>
     <div class="row">
@@ -403,6 +421,63 @@ $("testBtn").addEventListener("click", async () => {
 
 loadConfig();
 refreshModelCard();
+refreshOcrCard();
+
+/* ---------- OCR 模型下载 ---------- */
+let ocrTimer = null;
+function pollOcr() {
+  if (ocrTimer) return;
+  ocrTimer = setInterval(async () => {
+    try {
+      const st = await (await fetch("/v1/ocr/status")).json();
+      if (st.dl_active) {
+        $("ocrProgRow").style.display = "flex";
+        $("ocrCancel").style.display = "";
+        $("ocrDlBtn").disabled = true;
+        if (st.progress >= 0) { $("ocrBar").value = st.progress; $("ocrPct").textContent = st.progress + "%"; }
+        $("ocrHint").textContent = "正在下载（" + (st.mirror || "").replace("https://", "").split("/")[0] + "）";
+        return;
+      }
+      clearInterval(ocrTimer); ocrTimer = null;
+      $("ocrCancel").style.display = "none";
+      $("ocrDlBtn").disabled = false;
+      if (st.succeeded) { $("ocrProgRow").style.display = "none"; $("ocrHint").textContent = "✓ OCR 模型就绪，托盘「截图翻译」已可用"; }
+      else if (st.error && st.error !== "已取消") $("ocrHint").textContent = "✗ " + st.error;
+      refreshOcrCard();
+    } catch {}
+  }, 1000);
+}
+
+async function refreshOcrCard() {
+  try {
+    const st = await (await fetch("/v1/ocr/status")).json();
+    const el = $("ocrState");
+    if (st.installed) { el.textContent = "已安装 ✓"; el.className = "status ok"; $("ocrDlBtn").style.display = "none"; }
+    else {
+      el.textContent = "未安装"; el.className = "status bad";
+      $("ocrDlBtn").style.display = "";
+      $("ocrDlBtn").disabled = st.dl_active;
+    }
+    if (st.dl_active) { $("ocrProgRow").style.display = "flex"; $("ocrCancel").style.display = ""; pollOcr(); }
+  } catch {}
+}
+
+$("ocrDlBtn").addEventListener("click", async () => {
+  const r = await fetch("/v1/ocr/download", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+  const j = await r.json();
+  if (!j.ok) { $("ocrHint").textContent = "✗ " + (j.error || "启动失败"); return; }
+  $("ocrProgRow").style.display = "flex";
+  $("ocrCancel").style.display = "";
+  $("ocrDlBtn").disabled = true;
+  pollOcr();
+});
+
+$("ocrCancel").addEventListener("click", async () => {
+  await fetch("/v1/ocr/download", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cancel: true }) });
+});
+
 loadStatus();
 setInterval(loadStatus, 5000);
 </script>

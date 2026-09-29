@@ -15,6 +15,15 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# ---- onnxruntime（截图 OCR，存在即启用；获取方法见 docs/BUILD.md）----
+set(ORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime")
+if(EXISTS "${ORT_DIR}/include/onnxruntime_cxx_api.h")
+    message(STATUS "OCR: onnxruntime 已就绪，启用截图识别")
+    add_compile_definitions(FANYI_OCR_ENABLED)
+    include_directories(${ORT_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
+    link_directories(${ORT_DIR}/lib)
+endif()
+
 # ---- llama.cpp (vendored, pinned) ----
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
@@ -52,11 +61,13 @@ target_link_libraries(fanyi-cli PRIVATE fanyi_core)
 if(WIN32)
     set(FANYI_TRAY_SRC server/src/tray_win.cpp)
     set(FANYI_CAPTURE_SRC server/src/capture/text_selection_win.cpp
-                          server/src/capture/result_window_win.cpp)
+                          server/src/capture/result_window_win.cpp
+                          server/src/capture/screen_capture_win.cpp)
 elseif(APPLE)
     set(FANYI_TRAY_SRC server/src/tray_mac.mm)
     set(FANYI_CAPTURE_SRC server/src/capture/text_selection_mac.mm
-                          server/src/capture/result_window_mac.mm)
+                          server/src/capture/result_window_mac.mm
+                          server/src/capture/screen_capture_mac.mm)
     set_source_files_properties(server/src/capture/result_window_mac.mm
                                 PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 else()
@@ -67,7 +78,12 @@ else()
         set(FANYI_TRAY_SRC server/src/tray_headless.cpp)
     endif()
     set(FANYI_CAPTURE_SRC server/src/capture/text_selection_linux.cpp
-                          server/src/capture/result_window_linux.cpp)
+                          server/src/capture/result_window_linux.cpp
+                          server/src/capture/screen_capture_linux.cpp)
+endif()
+
+if(EXISTS "${ORT_DIR}/include/onnxruntime_cxx_api.h")
+    list(APPEND FANYI_CAPTURE_SRC server/src/ocr/rapidocr.cpp)
 endif()
 
 add_executable(fanyi-server
@@ -80,6 +96,10 @@ add_executable(fanyi-server
 )
 target_include_directories(fanyi-server PRIVATE server/src)
 target_link_libraries(fanyi-server PRIVATE fanyi_core httplib)
+if(EXISTS "${ORT_DIR}/lib")
+    target_link_libraries(fanyi-server PRIVATE onnxruntime)
+    set(CMAKE_BUILD_RPATH "${ORT_DIR}/lib")
+endif()
 
 if(WIN32)
     target_link_libraries(fanyi-server PRIVATE ws2_32)

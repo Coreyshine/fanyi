@@ -18,6 +18,7 @@
 @property(strong) NSPanel *win;
 @property(copy) NSString *trans;
 @property(strong) NSTimer *timer;
+@property(strong) id monitor;   // 点击窗口外自动关闭
 - (instancetype)initWithPanel:(NSPanel *)win translate:(NSString *)t;
 - (void)copyTrans:(id)sender;
 - (void)close;
@@ -35,20 +36,25 @@
     [[NSPasteboard generalPasteboard] setString:self.trans forType:NSPasteboardTypeString];
 }
 - (void)close {
+    if (self.monitor) { [NSEvent removeMonitor:self.monitor]; self.monitor = nil; }
     [self.timer invalidate];
     [self.win orderOut:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 - (void)installObservers {
     __weak FanyiResultBox *me = self;
-    NSTimer *t = [NSTimer timerWithTimeInterval:25.0
+    NSTimer *t = [NSTimer timerWithTimeInterval:15.0
                                         repeats:NO
                                           block:^(NSTimer *) { [me close]; }];
     [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes];
     self.timer = t;
-    // 失焦自动关
-    [[NSNotificationCenter defaultCenter]
-        addObserverForName:NSWindowDidResignKeyNotification object:self.win queue:nil
-        usingBlock:^(NSNotification *n) { [[me win] orderOut:nil]; }];
+    // 点击窗口外自动关（非激活面板收不到 Esc，这个是主要关闭途径）
+    self.monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown
+        handler:^(NSEvent *e) {
+            NSPoint loc = e.locationInWindow;   // 全局监视：屏幕坐标
+            NSRect f = self.win.frame;
+            if (!NSPointInRect(loc, f)) [me close];
+        }];
 }
 @end
 
@@ -133,6 +139,15 @@ void result_window_show(const std::string &original,
             copy.target = box;
             copy.action = @selector(copyTrans:);
             [content addSubview:copy];
+
+            NSButton *close = [[NSButton alloc] initWithFrame:NSMakeRect(310, 4, 24, 22)];
+            close.title = @"✕";
+            close.bezelStyle = NSBezelStyleRounded;
+            close.bordered = NO;
+            close.font = [NSFont systemFontOfSize:13];
+            close.target = box;
+            close.action = @selector(close);
+            [content addSubview:close];
 
             // 定位：鼠标附近，屏内收拢
             NSPoint m = [NSEvent mouseLocation];

@@ -17,6 +17,9 @@
 #include "config.h"
 #include "fanyi/translator.h"
 #include "model_download.h"
+#ifdef FANYI_OCR_ENABLED
+#  include "ocr/ocr.h"
+#endif
 
 #define CPPHTTPLIB_THREAD_POOL_COUNT 8
 #include "httplib.h"
@@ -32,6 +35,7 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include <filesystem>
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -101,6 +105,54 @@ struct Service::Impl {
     std::atomic<bool> running{false};
     std::atomic<bool> shutdown_req{false};
     std::atomic<long long> last_use_ms{0};
+    std::atomic<bool> ocr_dl{false};
+
+    /* OCR 三件套（det/rec/dict）串行下载，复用单一下载通道与多镜像降级 */
+    void ocr_start_download() {
+        if (ocr_dl.exchange(true)) return;
+        std::thread([this]() {
+            struct Item { std::string file; std::vector<std::string> mirrors; long long size; };
+            std::vector<Item> items = {
+                {"ch_pp-ocrv4_det_infer.onnx",
+                 {"https://hf-mirror.com/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_det_infer.onnx",
+                  "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_det_infer.onnx"},
+                 4745517},
+                {"ch_pp-ocrv4_rec_infer.onnx",
+                 {"https://hf-mirror.com/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx",
+                  "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx"},
+                 10857958},
+                {"ppocr_keys_v1.txt",
+                 {"https://cdn.jsdelivr.net/gh/PaddlePaddle/PaddleOCR@main/ppocr/utils/ppocr_keys_v1.txt",
+                  "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/ppocr_keys_v1.txt",
+                  "https://gitee.com/paddlepaddle/PaddleOCR/raw/main/ppocr/utils/ppocr_keys_v1.txt"},
+                 26250},
+            };
+            char *ud = fanyi_cfg_user_models_dir();
+            if (!ud) { ocr_dl = false; return; }
+            std::string dir = std::string(ud) + "/ocr";
+            free(ud);
+            std::filesystem::create_directories(dir);   /* 子目录必须先建，否则 curl 落盘失败 */
+
+            for (auto &it : items) {
+                std::string path = dir + "/" + it.file;
+                std::ifstream f(path, std::ios::binary);
+                if (f.good()) continue;   /* 已存在 */
+                model_download_start(dir, it.file, it.mirrors, it.size, nullptr, nullptr);
+                for (;;) {   /* 等当前文件结束 */
+                    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                    auto st = model_download_status();
+                    if (!st.active) break;
+                }
+                if (!model_download_status().succeeded) { ocr_dl = false; return; }
+            }
+            ocr_dl = false;
+        }).detach();
+    }
+    bool ocr_downloading() const { return ocr_dl.load(); }
+    void ocr_cancel() {
+        model_download_cancel();
+        ocr_dl.store(false);
+    }
 
     static long long now_ms() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -431,6 +483,82 @@ bool Service::start(std::string *err) {
         cJSON_Delete(o);
         res.set_content(txt ? txt : "{}", "application/json");
         cJSON_free(txt);
+    });
+
+    /* OCR 模型下载（三件套串行，复用单一下载通道）：POST /v1/ocr/download {"cancel":true} */
+    svr.Get("/v1/ocr/status", [&s](const httplib::Request &, httplib::Response &res) {
+        add_cors(res);
+        char *udir = fanyi_cfg_user_models_dir();
+        cJSON *o = cJSON_CreateObject();
+        bool installed = false;
+        if (udir) {
+            std::string dir = std::string(udir) + "/ocr";
+            free(udir);
+            const char *needed[3] = { "ch_pp-ocrv4_det_infer.onnx",
+                                      "ch_pp-ocrv4_rec_infer.onnx",
+                                      "ppocr_keys_v1.txt" };
+            installed = true;
+            for (int i = 0; i < 3; i++) {
+                std::ifstream f(dir + "/" + needed[i]);
+                if (!f.good()) { installed = false; break; }
+            }
+        }
+        auto st = model_download_status();
+        cJSON_AddBoolToObject(o, "installed", installed);
+        cJSON_AddBoolToObject(o, "dl_active", st.active);
+        cJSON_AddNumberToObject(o, "progress", st.progress);
+        cJSON_AddStringToObject(o, "mirror", st.mirror.c_str());
+        cJSON_AddStringToObject(o, "error", st.error.c_str());
+        cJSON_AddBoolToObject(o, "succeeded", st.succeeded);
+        char *txt = cJSON_PrintUnformatted(o);
+        cJSON_Delete(o);
+        res.set_content(txt ? txt : "{}", "application/json");
+        cJSON_free(txt);
+    });
+
+    svr.Post("/v1/ocr/download", [&s](const httplib::Request &req, httplib::Response &res) {
+        if (!origin_allowed(req.get_header_value("Origin").c_str())) { res.status = 403; return; }
+        add_cors(res);
+        cJSON *in = cJSON_Parse(req.body.c_str());
+        bool cancel = in && cJSON_IsTrue(cJSON_GetObjectItem(in, "cancel"));
+        cJSON_Delete(in);
+        if (cancel) {
+            s.ocr_cancel();
+            res.set_content("{\"ok\":true,\"cancelled\":true}", "application/json");
+            return;
+        }
+        if (s.ocr_downloading()) {
+            res.set_content("{\"ok\":false,\"error\":\"下载已在进行中\"}", "application/json");
+            return;
+        }
+        s.ocr_start_download();
+        res.set_content("{\"ok\":true,\"started\":true}", "application/json");
+    });
+
+    /* 调试：POST /v1/ocr/test {"png":"/path/x.png"} → 识别文本（仅本机） */
+    svr.Post("/v1/ocr/test", [&s](const httplib::Request &req, httplib::Response &res) {
+        if (!origin_allowed(req.get_header_value("Origin").c_str())) { res.status = 403; return; }
+#ifdef FANYI_OCR_ENABLED
+        cJSON *in = cJSON_Parse(req.body.c_str());
+        cJSON *jp = in ? cJSON_GetObjectItem(in, "png") : nullptr;
+        if (!cJSON_IsString(jp)) { cJSON_Delete(in); res.status = 400; res.set_content("{\"error\":\"png path required\"}", "application/json"); return; }
+        char *udir = fanyi_cfg_user_models_dir();
+        std::string dir = std::string(udir ? udir : "") + "/ocr";
+        free(udir);
+        std::string oerr, text;
+        if (!fanyi::ocr_ensure_loaded(dir, &oerr)) {
+            cJSON_Delete(in);
+            res.set_content("{\"error\":" + json_str(oerr.c_str()) + "}", "application/json");
+            return;
+        }
+        bool ok = fanyi::ocr_image_file(jp->valuestring, &text, &oerr);
+        cJSON_Delete(in);
+        std::string dbg = fanyi::ocr_last_debug();
+        if (ok) res.set_content("{\"text\":" + json_str(text.c_str()) + ",\"debug\":" + json_str(dbg.c_str()) + "}", "application/json");
+        else { res.status = 500; res.set_content("{\"error\":" + json_str(oerr.c_str()) + "}", "application/json"); }
+#else
+        res.set_content("{\"error\":\"本构建未启用 OCR\"}", "application/json");
+#endif
     });
 
     /* 模型下载：POST /v1/model/download

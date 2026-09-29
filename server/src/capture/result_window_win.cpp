@@ -33,6 +33,7 @@ static std::wstring to_wide(const std::string &u8) {
 static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_COMMAND:
+            if (LOWORD(wp) == 102) { DestroyWindow(h); return 0; }   // ✕ 关闭
             if (LOWORD(wp) == 100) {   // 复制译文
                 HWND hEdit = GetDlgItem(h, 101);
                 int len = GetWindowTextLengthW(hEdit);
@@ -97,11 +98,14 @@ static DWORD WINAPI window_thread(LPVOID param) {
     HWND hBtn = CreateWindowExW(0, L"BUTTON", L"复制译文",
                                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
                                 14, 110, 100, 26, h, (HMENU)100, NULL, NULL);
-    set_font(hTitle, 12); set_font(hOrig, 11); set_font(hTrans, 14); set_font(hBtn, 13);
+    HWND hClose = CreateWindowExW(0, L"BUTTON", L"✕",
+                                  WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                                  W - 34, 8, 24, 22, h, (HMENU)102, NULL, NULL);
+    set_font(hTitle, 12); set_font(hOrig, 11); set_font(hTrans, 14); set_font(hBtn, 13); set_font(hClose, 12);
     SendMessageW(hOrig, WM_SETTEXT, 0, (LPARAM)a->original.c_str());
 
     ShowWindow(h, SW_SHOWNOACTIVATE);
-    SetTimer(h, 1, 30000, NULL);       // 30s 超时自动关
+    SetTimer(h, 1, 15000, NULL);       // 15s 超时自动关（✕ 可随时手动关）
     SetFocus(hTrans);
 
     MSG msg;

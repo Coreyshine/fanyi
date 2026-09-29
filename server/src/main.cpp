@@ -7,9 +7,14 @@
 #include "config.h"
 #include "fanyi/translator.h"
 #include "capture/capture.h"
+#ifdef FANYI_OCR_ENABLED
+#  include "ocr/ocr.h"
+#  include "capture/screen_capture.h"
+#endif
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -38,9 +43,46 @@ static void run_select_translate_async() {
     }).detach();
 }
 static void tray_select_fn()         { run_select_translate_async(); }
-static void tray_capture_fn()        {
-    /* 截图翻译在 v1.1-beta 接入 OCR，此处先提示 */
-    fanyi::result_window_show("截图翻译", "截图翻译将在 v1.1-beta 版本提供，敬请期待", "提示");
+
+/* 截图翻译：框选屏幕 → OCR → 翻译 → 浮窗 */
+static void tray_capture_fn() {
+    Service *svc = g_svc;
+    std::thread([svc] {
+#ifdef FANYI_OCR_ENABLED
+        char *udir = fanyi_cfg_user_models_dir();
+        if (!udir) return;
+        std::string ocr_dir = std::string(udir) + "/ocr";
+        free(udir);
+
+        if (!fanyi::ocr_models_installed(ocr_dir)) {
+            fanyi::result_window_show("截图翻译", "OCR 模型未下载：请打开设置页，在「截图识别」卡片下载（约 15MB）", "提示");
+            return;
+        }
+        std::string oerr;
+        if (!fanyi::ocr_ensure_loaded(ocr_dir, &oerr)) {
+            fanyi::result_window_show("截图翻译", oerr, "提示");
+            return;
+        }
+        std::string png = ocr_dir + "/capture.png";
+        std::string cap_err;
+        if (!fanyi::screen_capture_to_file(png, &cap_err)) {
+            fanyi::result_window_show("截图翻译", cap_err.empty() ? "已取消截图" : cap_err, "提示");
+            return;
+        }
+        std::string text;
+        std::string oerr2;
+        bool ok = fanyi::ocr_image_file(png, &text, &oerr2);
+        std::remove(png.c_str());
+        if (!ok) { fanyi::result_window_show("截图翻译", oerr2, "提示"); return; }
+        if (text.empty()) { fanyi::result_window_show("截图翻译", "未识别到文字，请框选包含文字的区域", "提示"); return; }
+        std::string terr;
+        std::string out = svc->translate_text(text, &terr);
+        if (out.empty()) out = terr.empty() ? "翻译失败" : terr;
+        fanyi::result_window_show(text, out, svc->target_lang_name());
+#else
+        fanyi::result_window_show("截图翻译", "本构建未启用 OCR（构建时需 onnxruntime）", "提示");
+#endif
+    }).detach();
 }
 
 #if defined(__APPLE__) || defined(_WIN32)
