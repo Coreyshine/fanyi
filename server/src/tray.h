@@ -11,6 +11,8 @@ struct TrayActions {
     bool (*enabled)();          /* 当前总开关状态 */
     void (*toggle_enabled)();   /* 切换总开关 */
     void (*quit)();             /* 请求退出 */
+    void (*select_translate)(); /* 划词翻译：取选中文字 → 翻译 → 浮窗 */
+    void (*capture_translate)();/* 截图翻译（v1.1-beta 接入） */
 };
 
 /* 返回后进程可以退出。无托盘环境的实现只等待 quit。 */

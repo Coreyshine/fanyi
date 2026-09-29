@@ -14,6 +14,10 @@ extern "C" {
 
 #define FANYI_DEFAULT_PORT 8765
 
+/* 官方量化的文件名清单（探测顺序：Q8_0 > Q6_K > Q4_K_M） */
+extern const char *const fanyi_model_files[];
+extern const int fanyi_model_file_count;
+
 typedef struct fanyi_cfg {
     char source_lang[16];      /* 源语言代码，如 "en"；"auto" 交给前端检测 */
     char target_lang[16];      /* 目标语言代码，如 "zh" */
@@ -25,6 +29,7 @@ typedef struct fanyi_cfg {
     int  idle_unload_min;      /* 空闲 N 分钟卸载模型，0=不卸载，默认 10 */
     int  port;                 /* HTTP 端口，默认 8765 */
     char model_path[512];      /* GGUF 路径，空 = 自动探测 */
+    char model_file[64];       /* 所选量化文件名（Hy-MT2-1.8B-Q8_0.gguf 等），空 = 自动 */
     bool enabled;              /* 总开关（托盘/设置页可切换） */
 } fanyi_cfg;
 
@@ -46,6 +51,12 @@ char *fanyi_cfg_find_model(const fanyi_cfg *c);
 
 /* 可执行文件所在目录（调用者 free()），失败返回 NULL */
 char *fanyi_exe_dir(void);
+
+/* 设备物理内存 GB（向上取整，失败返回 0） */
+int fanyi_device_ram_gb(void);
+
+/* 列出已安装的量化文件名，返回数量（out 为 out_cap 个 64 字节槽位） */
+int fanyi_cfg_installed_models(char out[][64], int out_cap);
 
 #ifdef __cplusplus
 }

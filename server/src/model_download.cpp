@@ -34,12 +34,24 @@ static std::atomic<long long> g_cancel{0};   /* 取消代次：值变化 = 请�
 static bool g_thread_alive = false;
 
 std::vector<std::string> model_default_mirrors() {
-    /* 两个独立运营的源，均已实测（文件大小 1,908,528,192 字节精确一致）：
-       1) hf-mirror.com — HuggingFace 国内全量镜像，大陆直连快
-       2) huggingface.co — 官方源 */
     return {
         "https://hf-mirror.com/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q8_0.gguf",
         "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q8_0.gguf",
+    };
+}
+
+std::vector<CatalogEntry> model_catalog() {
+    return {
+        {"Q8_0",   "Hy-MT2-1.8B-Q8_0.gguf",   1908528192LL, "1.9 GB",  "约 2.5 GB"},
+        {"Q6_K",   "Hy-MT2-1.8B-Q6_K.gguf",   1474785120LL, "1.5 GB",  "约 2.1 GB"},
+        {"Q4_K_M", "Hy-MT2-1.8B-Q4_K_M.gguf", 1133080448LL, "1.1 GB",  "约 1.6 GB"},
+    };
+}
+
+std::vector<std::string> model_mirrors_for(const CatalogEntry &e) {
+    return {
+        "https://hf-mirror.com/tencent/Hy-MT2-1.8B-GGUF/resolve/main/" + e.file,
+        "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/" + e.file,
     };
 }
 

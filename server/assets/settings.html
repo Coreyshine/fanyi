@@ -35,7 +35,18 @@
     border-radius: 8px; font-size: 14px; background: #fff; color: var(--ink);
   }
   input[type=range] { flex: 1; }
-  .hint { color: var(--sub); font-size: 12.5px; margin: 4px 0 0 142px; }
+  .mcard { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 8px 0; cursor: pointer; }
+.mcard:hover { border-color: var(--accent); }
+.mcard.sel { border-color: var(--accent); background: var(--accent-soft); }
+.mhead { display: flex; align-items: center; gap: 10px; }
+.msize { color: var(--sub); font-size: 12.5px; }
+.mbadges { margin-left: auto; display: flex; gap: 6px; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #eef1f5; color: var(--sub); }
+.badge.rec { background: #fdeeee; color: #c2410c; font-weight: 600; }
+.badge.ok { background: #e8f7ee; color: var(--ok); }
+.badge.use { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.mfit { color: var(--sub); font-size: 12px; margin-top: 3px; }
+.hint { color: var(--sub); font-size: 12.5px; margin: 4px 0 0 142px; }
   .switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .slider {
@@ -92,31 +103,18 @@
       <span id="modelState" class="status">检查中…</span>
     </div>
     <div class="hint" id="modelPath" style="margin-top:2px"></div>
-    <div id="dlArea" style="display:none">
-      <div class="row" style="margin-top:10px">
-        <label>下载镜像</label>
-        <select id="mirrorSel" style="flex:1">
-          <option value="auto">自动（推荐：失败自动切换）</option>
-          <option value="hf-mirror">仅 hf-mirror.com（国内快）</option>
-          <option value="huggingface">仅 huggingface.co（官方）</option>
-          <option value="custom">自定义地址…</option>
-        </select>
-      </div>
-      <div class="row" id="customRow" style="display:none">
-        <label>自定义镜像</label>
-        <input type="text" id="customUrl" placeholder="完整 GGUF 下载地址（失败自动回退内置源）">
-      </div>
-      <div class="row">
-        <button class="btn" id="dlBtn">下 载 模 型（约 1.9 GB）</button>
-        <button class="btn ghost" id="dlCancel" style="display:none">取 消</button>
-      </div>
-      <div class="row" id="dlProgRow" style="display:none">
-        <label>下载进度</label>
-        <input type="range" min="0" max="100" value="0" id="dlBar" disabled style="flex:1">
-        <span class="val" id="dlPct">0%</span>
-      </div>
-      <div class="hint" id="dlHint" style="margin-left:142px">多镜像自动切换：hf-mirror.com → huggingface.co，支持断点续传</div>
+    <div id="modelCards"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="dlBtn" style="display:none">下 载 所 选 模 型</button>
+      <button class="btn" id="useBtn" style="display:none">切 换 为 使 用 中</button>
+      <button class="btn ghost" id="dlCancel" style="display:none">取 消 下 载</button>
     </div>
+    <div class="row" id="dlProgRow" style="display:none">
+      <label>下载进度</label>
+      <input type="range" min="0" max="100" value="0" id="dlBar" disabled style="flex:1">
+      <span class="val" id="dlPct">0%</span>
+    </div>
+    <div class="hint" id="dlHint" style="margin-left:0;margin-top:6px">多镜像自动切换：hf-mirror.com → huggingface.co，支持断点续传</div>
   </div>
 
   <div class="card">
@@ -252,6 +250,106 @@ async function loadConfig() {
 
 $("foreign_ratio").addEventListener("input", e => $("ratio_val").textContent = e.target.value + "%");
 
+/* ---------- 模型目录与下载 ---------- */
+let dlTimer = null, modelList = [], selectedModel = null;
+
+function renderModels(j) {
+  modelList = j.models || [];
+  const box = $("modelCards");
+  box.innerHTML = "";
+  for (const m of modelList) {
+    const card = document.createElement("div");
+    card.className = "mcard" + (selectedModel === m.id ? " sel" : "");
+    const badges = [];
+    if (m.recommended) badges.push('<span class="badge rec">推荐</span>');
+    if (m.active) badges.push('<span class="badge use">使用中</span>');
+    else if (m.installed) badges.push('<span class="badge ok">已安装</span>');
+    card.innerHTML =
+      '<div class="mhead"><b>' + m.id + '</b>' +
+      '<span class="msize">硬盘 ' + m.size_text + ' · 内存 ' + m.ram_text + '</span>' +
+      '<span class="mbadges">' + badges.join("") + '</span></div>' +
+      '<div class="mfit">质量：' + m.quality + ' · 速度：' + m.speed + ' · ' + m.fit + '</div>';
+    card.addEventListener("click", () => { selectedModel = m.id; renderModels(j); updateModelButtons(); });
+    box.appendChild(card);
+  }
+  updateModelButtons();
+}
+
+function updateModelButtons() {
+  const m = modelList.find(x => x.id === selectedModel);
+  const dl = $("dlBtn"), use = $("useBtn");
+  if (!m) { dl.style.display = "none"; use.style.display = "none"; return; }
+  use.style.display = m.installed && !m.active ? "" : "none";
+  dl.style.display = (!m.installed) ? "" : "none";
+  dl.textContent = "下 载 模 型（" + m.size_text + "）";
+}
+
+async function refreshModelCard() {
+  try {
+    const st = await (await fetch("/v1/status")).json();
+    const state = $("modelState");
+    if (st.model_loaded) { state.textContent = "已加载运行中 ✓"; state.className = "status ok"; }
+    else if (st.model_installed) { state.textContent = "已安装（首次翻译时自动加载）"; state.className = "status ok"; }
+    else { state.textContent = "未安装 —— 请在下方选择模型下载"; state.className = "status bad"; }
+    if (st.model_installed_path) $("modelPath").textContent = "路径：" + st.model_installed_path;
+    const j = await (await fetch("/v1/models")).json();
+    if (!selectedModel) selectedModel = j.recommended;
+    renderModels(j);
+    if (st.model_download && st.model_download.active) pollDownload();
+  } catch {}
+}
+
+$("dlBtn").addEventListener("click", async () => {
+  if (!selectedModel) return;
+  $("dlHint").textContent = "";
+  const r = await fetch("/v1/model/download", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: selectedModel }) });
+  const jj = await r.json();
+  if (!jj.ok) { $("dlHint").textContent = "✗ " + (jj.error || "启动失败"); return; }
+  $("dlProgRow").style.display = "flex";
+  $("dlCancel").style.display = "";
+  $("dlBtn").disabled = true;
+  pollDownload();
+});
+
+$("useBtn").addEventListener("click", async () => {
+  const m = modelList.find(x => x.id === selectedModel);
+  if (!m) return;
+  await fetch("/v1/config", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_file: m.file }) });
+  $("modelState").textContent = "已切换（下次翻译生效）";
+  refreshModelCard();
+});
+
+$("dlCancel").addEventListener("click", async () => {
+  await fetch("/v1/model/download", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cancel: true }) });
+});
+
+function pollDownload() {
+  if (dlTimer) return;
+  dlTimer = setInterval(async () => {
+    try {
+      const st = (await (await fetch("/v1/status")).json()).model_download || {};
+      if (st.active) {
+        $("dlProgRow").style.display = "flex";
+        $("dlCancel").style.display = "";
+        $("dlBtn").disabled = true;
+        if (st.progress >= 0) { $("dlBar").value = st.progress; $("dlPct").textContent = st.progress + "%"; }
+        $("dlHint").textContent = "正在从 " + (st.mirror || "").replace("https://", "").split("/")[0] + " 下载";
+        return;
+      }
+      stopDlPoll();
+      $("dlCancel").style.display = "none";
+      $("dlBtn").disabled = false;
+      if (st.succeeded) $("dlHint").textContent = "✓ 下载完成，模型已就绪";
+      else if (st.error && st.error !== "已取消") $("dlHint").textContent = "✗ " + st.error;
+      refreshModelCard();
+    } catch {}
+  }, 1000);
+}
 /* ---------- 模型下载 ---------- */
 let dlTimer = null;
 $("mirrorSel").addEventListener("change", () => {

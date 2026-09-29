@@ -15,6 +15,8 @@ static std::atomic<bool> g_quit{false};
 @interface FanyiTarget : NSObject
 - (void)onSettings:(id)sender;
 - (void)onToggle:(id)sender;
+- (void)onSelectTranslate:(id)sender;
+- (void)onCaptureTranslate:(id)sender;
 - (void)onQuit:(id)sender;
 @end
 
@@ -30,6 +32,14 @@ static std::atomic<bool> g_quit{false};
     NSMenuItem *it = (NSMenuItem *)sender;
     it.state = g_actions.enabled() ? NSControlStateValueOn : NSControlStateValueOff;
     it.title  = g_actions.enabled() ? @"翻译：开（点此暂停）" : @"翻译：暂停（点此开启）";
+}
+- (void)onSelectTranslate:(id)sender {
+    (void)sender;
+    g_actions.select_translate();
+}
+- (void)onCaptureTranslate:(id)sender {
+    (void)sender;
+    g_actions.capture_translate();
 }
 - (void)onQuit:(id)sender {
     (void)sender;
@@ -62,14 +72,26 @@ int tray_run(const TrayActions &actions) {
         toggle.target = target;
         toggle.state = actions.enabled() ? NSControlStateValueOn : NSControlStateValueOff;
 
+        [menu addItem:settings];
+        [menu addItem:toggle];
+        [menu addItem:[NSMenuItem separatorItem]];
+
+        NSMenuItem *sel = [[NSMenuItem alloc] initWithTitle:@"划词翻译（先选中文字再点）"
+                                                     action:@selector(onSelectTranslate:) keyEquivalent:@"e"];
+        sel.target = target;
+        [menu addItem:sel];
+
+        NSMenuItem *cap = [[NSMenuItem alloc] initWithTitle:@"截图翻译（框选屏幕区域）"
+                                                     action:@selector(onCaptureTranslate:) keyEquivalent:@"g"];
+        cap.target = target;
+        [menu addItem:cap];
+
+        [menu addItem:[NSMenuItem separatorItem]];
+
         NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"退出 fanyi"
                                                       action:@selector(onQuit:) keyEquivalent:@"q"];
         quit.target = target;
 
-        [menu addItem:settings];
-        [menu addItem:toggle];
-        [menu addItem:[NSMenuItem separatorItem]];
-        [menu addItem:quit];
         item.menu = menu;
 
         [app run];   /* 阻塞；返回条件：quit 菜单或外部 tray_request_stop → terminate */

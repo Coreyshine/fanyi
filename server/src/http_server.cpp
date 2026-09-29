@@ -297,6 +297,7 @@ bool Service::start(std::string *err) {
         cJSON_AddNumberToObject(o, "idle_unload_min", s.cfg.idle_unload_min);
         cJSON_AddNumberToObject(o, "port", s.cfg.port);
         cJSON_AddStringToObject(o, "model_path", s.cfg.model_path);
+        cJSON_AddStringToObject(o, "model_file", s.cfg.model_file);
         cJSON_AddBoolToObject(o, "enabled", s.cfg.enabled);
         char *txt = cJSON_PrintUnformatted(o);
         cJSON_Delete(o);
@@ -347,6 +348,12 @@ bool Service::start(std::string *err) {
                     model_dirty = true;
                 }
             }
+            if ((v = cJSON_GetObjectItem(in, "model_file")) && cJSON_IsString(v)) {
+                if (strcmp(s.cfg.model_file, v->valuestring) != 0) {
+                    snprintf(s.cfg.model_file, sizeof s.cfg.model_file, "%s", v->valuestring);
+                    model_dirty = true;   /* 切换量化：卸载后按新文件名重载 */
+                }
+            }
             if ((v = cJSON_GetObjectItem(in, "enabled")) && cJSON_IsBool(v))
                 s.cfg.enabled = cJSON_IsTrue(v);
             char serr[256] = {0};
@@ -361,19 +368,87 @@ bool Service::start(std::string *err) {
         res.set_content("{\"ok\":true,\"note\":\"换模型/并行参数已重载；端口修改需重启服务\"}", "application/json");
     });
 
+    /* 模型目录：GET /v1/models —— 三档量化 + 安装状态 + 按设备内存推荐 */
+    svr.Get("/v1/models", [&s](const httplib::Request &, httplib::Response &res) {
+        add_cors(res);
+        int ram_gb = fanyi_device_ram_gb();
+        const char *recommend =
+            ram_gb >= 16 ? "Q8_0" :
+            ram_gb >= 8  ? "Q6_K" : "Q4_K_M";
+
+        char installed[3][64];
+        int n_installed = fanyi_cfg_installed_models(installed, 3);
+
+        /* 当前激活文件名：配置指定 > 自动探测到的 */
+        std::string active;
+        {
+            std::lock_guard<std::mutex> g(s.cfg_mtx);
+            if (s.cfg.model_file[0]) active = s.cfg.model_file;
+            else {
+                char *mp = fanyi_cfg_find_model(&s.cfg);
+                if (mp) {
+                    active = mp;
+                    free(mp);
+                    auto pos = active.find_last_of("/\\");
+                    if (pos != std::string::npos) active = active.substr(pos + 1);
+                }
+            }
+        }
+
+        struct Meta { const char *quality, *speed, *fit; };
+        Meta meta[3] = {
+            {"近无损",  "标准", "16GB+ 内存，追求精准"},
+            {"接近无损", "标准", "8–16GB 内存，均衡之选"},
+            {"有折损",  "最快", "8GB 以下低配电脑"},
+        };
+
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddNumberToObject(o, "device_ram_gb", ram_gb);
+        cJSON_AddStringToObject(o, "recommended", recommend);
+        cJSON *arr = cJSON_CreateArray();
+        auto cat = model_catalog();
+        for (size_t i = 0; i < cat.size(); i++) {
+            cJSON *m = cJSON_CreateObject();
+            cJSON_AddStringToObject(m, "id", cat[i].id.c_str());
+            cJSON_AddStringToObject(m, "file", cat[i].file.c_str());
+            cJSON_AddNumberToObject(m, "size_gb", atof(cat[i].size_text.c_str()));
+            cJSON_AddStringToObject(m, "size_text", cat[i].size_text.c_str());
+            cJSON_AddStringToObject(m, "ram_text", cat[i].ram_text.c_str());
+            cJSON_AddStringToObject(m, "quality", meta[i].quality);
+            cJSON_AddStringToObject(m, "speed", meta[i].speed);
+            cJSON_AddStringToObject(m, "fit", meta[i].fit);
+            bool inst = false, act = false;
+            for (int k = 0; k < n_installed; k++)
+                if (cat[i].file == installed[k]) inst = true;
+            if (active == cat[i].file) { act = true; inst = true; }
+            cJSON_AddBoolToObject(m, "installed", inst);
+            cJSON_AddBoolToObject(m, "active", act);
+            cJSON_AddBoolToObject(m, "recommended", strcmp(cat[i].id.c_str(), recommend) == 0);
+            cJSON_AddItemToArray(arr, m);
+        }
+        cJSON_AddItemToObject(o, "models", arr);
+        char *txt = cJSON_PrintUnformatted(o);
+        cJSON_Delete(o);
+        res.set_content(txt ? txt : "{}", "application/json");
+        cJSON_free(txt);
+    });
+
     /* 模型下载：POST /v1/model/download
-       {"cancel":true} 取消；{"url":"自定义镜像"} 自定义源优先；否则自动镜像表 */
+       {"model":"Q6_K"} 按目录下载；{"url":"自定义镜像"} 自定义源优先；
+       {"cancel":true} 取消 */
     svr.Post("/v1/model/download", [&s](const httplib::Request &req, httplib::Response &res) {
         if (!origin_allowed(req.get_header_value("Origin").c_str())) { res.status = 403; return; }
         add_cors(res);
         cJSON *in = cJSON_Parse(req.body.c_str());
         bool cancel = false;
-        std::string custom_url;
+        std::string custom_url, model_id;
         if (in) {
             cJSON *v;
             if ((v = cJSON_GetObjectItem(in, "cancel")) && cJSON_IsTrue(v)) cancel = true;
             if ((v = cJSON_GetObjectItem(in, "url")) && cJSON_IsString(v) && v->valuestring[0])
                 custom_url = v->valuestring;
+            if ((v = cJSON_GetObjectItem(in, "model")) && cJSON_IsString(v) && v->valuestring[0])
+                model_id = v->valuestring;
         }
         if (cancel) {
             model_download_cancel();
@@ -386,17 +461,37 @@ bool Service::start(std::string *err) {
             res.set_content("{\"ok\":false,\"error\":\"下载已在进行中\"}", "application/json");
             return;
         }
-        {
-            char *mp = fanyi_cfg_find_model(&s.cfg);
-            if (mp) {
-                free(mp);
+
+        std::string filename;
+        long long expect = 0;
+        std::vector<std::string> mirrors;
+        if (!model_id.empty()) {
+            for (auto &e : model_catalog())
+                if (e.id == model_id) { filename = e.file; expect = e.size; mirrors = model_mirrors_for(e); break; }
+            if (filename.empty()) {
                 cJSON_Delete(in);
-                res.set_content("{\"ok\":false,\"error\":\"模型已安装，无需下载\"}", "application/json");
+                res.set_content("{\"ok\":false,\"error\":\"未知模型: " + model_id + "\"}", "application/json");
                 return;
             }
+            {   /* 该量化已安装则不重复下载 */
+                char installed[3][64];
+                int n = fanyi_cfg_installed_models(installed, 3);
+                for (int k = 0; k < n; k++)
+                    if (filename == installed[k]) {
+                        cJSON_Delete(in);
+                        res.set_content("{\"ok\":false,\"error\":\"该模型已安装，可在设置里切换使用\"}", "application/json");
+                        return;
+                    }
+            }
+        } else if (!custom_url.empty()) {
+            filename = "Hy-MT2-1.8B-Q8_0.gguf";           /* 自定义源按 Q8_0 处理，大小实测校验 */
+            mirrors.push_back(custom_url);
+            auto fallback = model_default_mirrors();
+            mirrors.insert(mirrors.end(), fallback.begin(), fallback.end());
+        } else {
+            auto e = model_catalog()[0];                   /* 默认：Q8_0 */
+            filename = e.file; expect = e.size; mirrors = model_mirrors_for(e);
         }
-        std::vector<std::string> mirrors = model_default_mirrors();
-        if (!custom_url.empty()) mirrors.insert(mirrors.begin(), custom_url);   /* 自定义源优先，失败自动回退内置表 */
 
         char *dir = fanyi_cfg_user_models_dir();
         if (!dir) {
@@ -408,18 +503,26 @@ bool Service::start(std::string *err) {
         std::string user_dir(dir);
         free(dir);
         cJSON_Delete(in);
+
+        struct DoneCtx { Impl *impl; std::string file; };
+        DoneCtx *ctx = new DoneCtx{&s, filename};
         Impl *impl = &s;
-        /* 内置镜像用已知精确大小做完整性校验；自定义镜像按其实际 Content-Length 校验 */
-        long long expect = custom_url.empty() ? 1908528192LL : 0;
-        model_download_start(user_dir, "Hy-MT2-1.8B-Q8_0.gguf", mirrors,
-                             expect,
-                             [](void *ud) {   /* 下载成功后立即加载 */
-                                 auto *p = static_cast<Impl *>(ud);
-                                 std::lock_guard<std::mutex> g(p->model_mtx);
+        model_download_start(user_dir, filename, mirrors, expect,
+                             [](void *ud) {   /* 下载成功：登记所选量化 → 保存配置 → 立即加载 */
+                                 auto *c = static_cast<DoneCtx *>(ud);
+                                 {
+                                     std::lock_guard<std::mutex> g(c->impl->cfg_mtx);
+                                     snprintf(c->impl->cfg.model_file, sizeof c->impl->cfg.model_file,
+                                              "%s", c->file.c_str());
+                                     char e2[256] = {0};
+                                     c->impl->save_cfg(e2, sizeof e2);
+                                 }
+                                 std::lock_guard<std::mutex> g(c->impl->model_mtx);
                                  std::string e;
-                                 p->ensure_model_locked(&e);
-                             }, impl);
-        res.set_content("{\"ok\":true,\"started\":true}", "application/json");
+                                 c->impl->ensure_model_locked(&e);
+                                 delete c;
+                             }, ctx);
+        res.set_content("{\"ok\":true,\"started\":true,\"model\":" + json_str(filename.c_str()) + "}", "application/json");
     });
 
     svr.Post("/v1/translate", [&s](const httplib::Request &req, httplib::Response &res) {
@@ -529,13 +632,43 @@ void Service::run_until_shutdown() {
     stop();
 }
 
-void Service::request_shutdown() { impl_->shutdown_req.store(true); }
-
-bool Service::shutdown_requested() const { return impl_->shutdown_req.load(); }
-
 void Service::override_port(int port) {
     std::lock_guard<std::mutex> g(impl_->cfg_mtx);
     if (port > 0 && port <= 65535) impl_->cfg.port = port;
+}
+
+void Service::request_shutdown() { impl_->shutdown_req.store(true); }
+
+std::string Service::translate_text(const std::string &source, std::string *err) {
+    Impl &s = *impl_;
+    std::lock_guard<std::mutex> g(s.model_mtx);
+    std::string merr;
+    if (!s.ensure_model_locked(&merr)) {
+        if (err) *err = merr;
+        return "";
+    }
+    std::string target;
+    {
+        std::lock_guard<std::mutex> g2(s.cfg_mtx);
+        target = lang_name_zh(s.cfg.target_lang);
+    }
+    const char *seg = source.c_str();
+    char *out = nullptr;
+    char terr[512] = {0};
+    int rc = fanyi_translate(s.tr, &seg, 1, target.c_str(), &out, nullptr, nullptr, terr, sizeof terr);
+    std::string result;
+    if (rc == 0 && out) result = out;
+    else if (err) *err = terr[0] ? terr : "翻译失败";
+    fanyi_strfree(out);
+    s.last_use_ms.store(Impl::now_ms());
+    return result;
+}
+
+bool Service::shutdown_requested() const { return impl_->shutdown_req.load(); }
+
+std::string Service::target_lang_name() const {
+    std::lock_guard<std::mutex> g(impl_->cfg_mtx);
+    return lang_name_zh(impl_->cfg.target_lang);
 }
 
 bool Service::toggle_enabled() {

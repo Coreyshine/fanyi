@@ -6,6 +6,7 @@
 #include "tray.h"
 #include "config.h"
 #include "fanyi/translator.h"
+#include "capture/capture.h"
 
 #include <chrono>
 #include <cstdio>
@@ -20,6 +21,28 @@ static bool tray_enabled_fn()        { return g_svc->enabled(); }
 static void tray_toggle_fn()         { g_svc->toggle_enabled(); }
 static void tray_quit_fn()           { g_svc->request_shutdown(); }
 
+/* 划词/截图翻译：独立线程执行（取词 → 翻译 → 浮窗），不阻塞托盘 */
+static void run_select_translate_async() {
+    Service *svc = g_svc;
+    std::thread([svc] {
+        std::string err;
+        std::string text = fanyi::capture_selected_text(&err);
+        if (text.empty()) {
+            fanyi::result_window_show("划词翻译", err.empty() ? "未取到选中文本，请先选中文字" : err, "提示");
+            return;
+        }
+        std::string terr;
+        std::string out = svc->translate_text(text, &terr);
+        if (out.empty()) out = terr.empty() ? "翻译失败" : terr;
+        fanyi::result_window_show(text, out, svc->target_lang_name());
+    }).detach();
+}
+static void tray_select_fn()         { run_select_translate_async(); }
+static void tray_capture_fn()        {
+    /* 截图翻译在 v1.1-beta 接入 OCR，此处先提示 */
+    fanyi::result_window_show("截图翻译", "截图翻译将在 v1.1-beta 版本提供，敬请期待", "提示");
+}
+
 #if defined(__APPLE__) || defined(_WIN32)
 static int run_with_tray(Service *svc) {
     g_svc = svc;
@@ -29,6 +52,8 @@ static int run_with_tray(Service *svc) {
     actions.enabled        = tray_enabled_fn;
     actions.toggle_enabled = tray_toggle_fn;
     actions.quit           = tray_quit_fn;
+    actions.select_translate  = tray_select_fn;
+    actions.capture_translate = tray_capture_fn;
 
     /* 信号（Ctrl-C/服务管理器）→ 停止托盘事件循环 */
     std::thread watcher([svc] {

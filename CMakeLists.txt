@@ -51,8 +51,14 @@ target_link_libraries(fanyi-cli PRIVATE fanyi_core)
 # ---- fanyi-server ----
 if(WIN32)
     set(FANYI_TRAY_SRC server/src/tray_win.cpp)
+    set(FANYI_CAPTURE_SRC server/src/capture/text_selection_win.cpp
+                          server/src/capture/result_window_win.cpp)
 elseif(APPLE)
     set(FANYI_TRAY_SRC server/src/tray_mac.mm)
+    set(FANYI_CAPTURE_SRC server/src/capture/text_selection_mac.mm
+                          server/src/capture/result_window_mac.mm)
+    set_source_files_properties(server/src/capture/result_window_mac.mm
+                                PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 else()
     option(FANYI_TRAY "Build Linux tray icon (needs libayatana-appindicator)" OFF)
     if(FANYI_TRAY)
@@ -60,6 +66,8 @@ else()
     else()
         set(FANYI_TRAY_SRC server/src/tray_headless.cpp)
     endif()
+    set(FANYI_CAPTURE_SRC server/src/capture/text_selection_linux.cpp
+                          server/src/capture/result_window_linux.cpp)
 endif()
 
 add_executable(fanyi-server
@@ -67,6 +75,7 @@ add_executable(fanyi-server
     server/src/http_server.cpp
     server/src/model_download.cpp
     ${FANYI_TRAY_SRC}
+    ${FANYI_CAPTURE_SRC}
 )
 target_include_directories(fanyi-server PRIVATE server/src)
 target_link_libraries(fanyi-server PRIVATE fanyi_core httplib)
@@ -74,7 +83,7 @@ target_link_libraries(fanyi-server PRIVATE fanyi_core httplib)
 if(WIN32)
     target_link_libraries(fanyi-server PRIVATE ws2_32)
 elseif(APPLE)
-    target_link_libraries(fanyi-server PRIVATE "-framework Foundation" "-framework AppKit")
+    target_link_libraries(fanyi-server PRIVATE "-framework Foundation" "-framework AppKit" "-framework CoreGraphics")
 else()
     find_package(Threads REQUIRED)
     target_link_libraries(fanyi-server PRIVATE Threads::Threads dl)

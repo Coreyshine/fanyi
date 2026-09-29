@@ -21,6 +21,8 @@ static void on_settings(GtkMenu *, gpointer) {
     g_free(cmd);
 }
 static void on_toggle(GtkMenu *, gpointer) { g_actions.toggle_enabled(); }
+static void on_select(GtkMenu *, gpointer) { g_actions.select_translate(); }
+static void on_capture(GtkMenu *, gpointer) { g_actions.capture_translate(); }
 static void on_quit(GtkMenu *, gpointer) {
     g_actions.quit();
     g_quit.store(true);
@@ -40,6 +42,8 @@ int tray_run(const TrayActions &actions) {
     struct { const char *label; GCallback cb; } items[] = {
         { "打开设置…", G_CALLBACK(on_settings) },
         { "翻译 开/暂停", G_CALLBACK(on_toggle) },
+        { "划词翻译", G_CALLBACK(on_select) },
+        { "截图翻译", G_CALLBACK(on_capture) },
         { "退出 fanyi", G_CALLBACK(on_quit) },
     };
     for (auto &it : items) {

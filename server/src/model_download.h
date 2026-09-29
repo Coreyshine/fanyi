@@ -19,6 +19,15 @@ struct DownloadState {
     bool     succeeded = false; // 最近一次下载是否成功
 };
 
+/* 模型目录条目（三档量化） */
+struct CatalogEntry {
+    std::string id;        // "Q8_0" / "Q6_K" / "Q4_K_M"
+    std::string file;      // GGUF 文件名
+    long long   size;      // 精确字节数（完整性校验）
+    std::string size_text; // 展示用，如 "1.9 GB"
+    std::string ram_text;  // 翻译时内存，如 "约 2.5 GB"
+};
+
 /*
  * 启动下载（已在下载中则忽略）。
  * target_dir: 保存目录；filename: 文件名；mirrors: 按顺序尝试的完整 URL 列表。
@@ -33,6 +42,11 @@ DownloadState model_download_status();
 
 /* 默认镜像表（按优先级；已在多环境实测） */
 std::vector<std::string> model_default_mirrors();
+
+/* 三档量化目录（tencent/Hy-MT2-1.8B-GGUF） */
+std::vector<CatalogEntry> model_catalog();
+/* 按条目生成镜像 URL 列表 */
+std::vector<std::string> model_mirrors_for(const CatalogEntry &e);
 
 } // namespace fanyi
 #endif

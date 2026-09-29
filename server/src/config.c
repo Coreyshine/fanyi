@@ -18,10 +18,18 @@
 #  include <unistd.h>
 #  ifdef __APPLE__
 #    include <mach-o/dyld.h>
+#    include <sys/sysctl.h>
 #  else
 #    include <libgen.h>
 #  endif
 #endif
+
+const char *const fanyi_model_files[] = {
+    "Hy-MT2-1.8B-Q8_0.gguf",
+    "Hy-MT2-1.8B-Q6_K.gguf",
+    "Hy-MT2-1.8B-Q4_K_M.gguf",
+};
+const int fanyi_model_file_count = 3;
 
 void fanyi_cfg_default(fanyi_cfg *c) {
     memset(c, 0, sizeof *c);
@@ -52,6 +60,7 @@ bool fanyi_cfg_save(const fanyi_cfg *c, const char *path, char *err, size_t err_
     cJSON_AddNumberToObject(o, "idle_unload_min", c->idle_unload_min);
     cJSON_AddNumberToObject(o, "port", c->port);
     jset_str(o, "model_path", c->model_path);
+    jset_str(o, "model_file", c->model_file);
     cJSON_AddBoolToObject(o, "enabled", c->enabled);
 
     char *s = cJSON_Print(o);
@@ -108,6 +117,8 @@ bool fanyi_cfg_load(fanyi_cfg *c, const char *path, char *err, size_t err_len) {
         c->port = (int)v->valuedouble;
     if ((v = cJSON_GetObjectItem(o, "model_path")) && cJSON_IsString(v))
         snprintf(c->model_path, sizeof c->model_path, "%s", v->valuestring);
+    if ((v = cJSON_GetObjectItem(o, "model_file")) && cJSON_IsString(v))
+        snprintf(c->model_file, sizeof c->model_file, "%s", v->valuestring);
     if ((v = cJSON_GetObjectItem(o, "enabled")) && cJSON_IsBool(v))
         c->enabled = cJSON_IsTrue(v);
     cJSON_Delete(o);
@@ -226,37 +237,28 @@ char *fanyi_cfg_user_models_dir(void) {
 #endif
 }
 
-char *fanyi_cfg_find_model(const fanyi_cfg *c) {
+/* 在各候选目录中查找指定文件；找到返回 1 并把完整路径写入 out */
+static int find_file_anywhere(const char *filename, char *out, size_t cap) {
     char exe[1024];
     char cand[1200];
-    if (c->model_path[0]) {
-        FILE *f = fopen(c->model_path, "rb");
-        if (f) { fclose(f); return strdup(c->model_path); }
-    }
     if (exe_dir(exe, sizeof exe)) {
-        snprintf(cand, sizeof cand, "%s/models/Hy-MT2-1.8B-Q8_0.gguf", exe);
-        FILE *f = fopen(cand, "rb");
-        if (f) { fclose(f); return strdup(cand); }
-        /* CMake 构建布局：build/ 在项目根下 */
-        snprintf(cand, sizeof cand, "%s/../models/Hy-MT2-1.8B-Q8_0.gguf", exe);
-        f = fopen(cand, "rb");
-        if (f) { fclose(f); return strdup(cand); }
-        /* macOS .app 包布局：Contents/Resources/models/ */
-        snprintf(cand, sizeof cand, "%s/../Resources/models/Hy-MT2-1.8B-Q8_0.gguf", exe);
-        f = fopen(cand, "rb");
-        if (f) { fclose(f); return strdup(cand); }
-    }
-    /* 用户模型目录（设置页下载的模型） */
-    {
-        char *udir = fanyi_cfg_user_models_dir();
-        if (udir) {
-            snprintf(cand, sizeof cand, "%s/Hy-MT2-1.8B-Q8_0.gguf", udir);
-            free(udir);
+        const char *dirs[3] = { "models", "../models", "../Resources/models" };
+        for (int i = 0; i < 3; i++) {
+            snprintf(cand, sizeof cand, "%s/%s/%s", exe, dirs[i], filename);
             FILE *f = fopen(cand, "rb");
-            if (f) { fclose(f); return strdup(cand); }
+            if (f) { fclose(f); snprintf(out, cap, "%s", cand); return 1; }
         }
     }
-    snprintf(cand, sizeof cand, "models/Hy-MT2-1.8B-Q8_0.gguf");
+    {   /* 用户模型目录（设置页下载） */
+        char *udir = fanyi_cfg_user_models_dir();
+        if (udir) {
+            snprintf(cand, sizeof cand, "%s/%s", udir, filename);
+            free(udir);
+            FILE *f = fopen(cand, "rb");
+            if (f) { fclose(f); snprintf(out, cap, "%s", cand); return 1; }
+        }
+    }
+    snprintf(cand, sizeof cand, "models/%s", filename);
     FILE *f = fopen(cand, "rb");
     if (f) {
         fclose(f);
@@ -266,7 +268,59 @@ char *fanyi_cfg_find_model(const fanyi_cfg *c) {
         char abs[1200];
         if (realpath(cand, abs)) snprintf(cand, sizeof cand, "%s", abs);
 #endif
-        return strdup(cand);
+        snprintf(out, cap, "%s", cand);
+        return 1;
     }
+    return 0;
+}
+
+int fanyi_device_ram_gb(void) {
+#ifdef _WIN32
+    MEMORYSTATUSEX ms; ms.dwLength = sizeof ms;
+    if (!GlobalMemoryStatusEx(&ms)) return 0;
+    return (int)((ms.ullTotalPhys + (1LL << 30) - 1) >> 30);
+#elif defined(__APPLE__)
+    long long b = 0; size_t len = sizeof b;
+    if (sysctlbyname("hw.memsize", &b, &len, NULL, 0) != 0) return 0;
+    return (int)((b + (1LL << 30) - 1) >> 30);
+#else
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) return 0;
+    char line[128];
+    long kb = 0;
+    while (fgets(line, sizeof line, f))
+        if (strncmp(line, "MemTotal:", 9) == 0) { kb = atol(line + 9); break; }
+    fclose(f);
+    return (int)((kb * 1024LL + (1LL << 30) - 1) >> 30);
+#endif
+}
+
+char *fanyi_cfg_find_model(const fanyi_cfg *c) {
+    char cand[1200];
+
+    /* 1) 配置的完整路径 */
+    if (c->model_path[0]) {
+        FILE *f = fopen(c->model_path, "rb");
+        if (f) { fclose(f); return strdup(c->model_path); }
+    }
+    /* 2) 用户所选量化文件名 */
+    if (c->model_file[0] && find_file_anywhere(c->model_file, cand, sizeof cand))
+        return strdup(cand);
+    /* 3) 依次探测官方量化清单 */
+    for (int i = 0; i < fanyi_model_file_count; i++)
+        if (find_file_anywhere(fanyi_model_files[i], cand, sizeof cand))
+            return strdup(cand);
     return NULL;
+}
+
+/* 列出所有已安装（可找到）的量化文件名到 out[j]，返回数量 */
+int fanyi_cfg_installed_models(char out[][64], int out_cap) {
+    int n = 0;
+    char cand[1200];
+    for (int i = 0; i < fanyi_model_file_count && n < out_cap; i++)
+        if (find_file_anywhere(fanyi_model_files[i], cand, sizeof cand)) {
+            snprintf(out[n], 64, "%s", fanyi_model_files[i]);
+            n++;
+        }
+    return n;
 }

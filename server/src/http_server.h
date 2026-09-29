@@ -30,6 +30,12 @@ public:
     /* --port 命令行临时覆盖（不写回配置文件） */
     void override_port(int port);
 
+    /* 供划词/截图翻译使用：翻译单段文本（阻塞，返回译文；失败置 err） */
+    std::string translate_text(const std::string &source, std::string *err);
+
+    /* 当前目标语言的中文名（用于结果浮窗标题） */
+    std::string target_lang_name() const;
+
     ~Service();
 
 private:
