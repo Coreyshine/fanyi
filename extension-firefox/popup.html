@@ -55,6 +55,17 @@
     <span class="label">翻译总开关<span class="sub">暂停后所有页面不自动翻</span></span>
     <span class="switch"><input type="checkbox" id="globalToggle"><span class="slider"></span></span>
   </div>
+  <div class="row">
+    <span class="label">视频字幕<span class="sub">视频画面上的字幕实时翻译</span></span>
+    <span class="switch"><input type="checkbox" id="videoToggle"><span class="slider"></span></span>
+  </div>
+  <div class="row" id="videoModeRow" style="display:none">
+    <span class="label">字幕模式</span>
+    <select id="videoMode" style="flex:1;background:#262b34;color:#e8ebf0;border:1px solid #3a4150;border-radius:6px;padding:4px;font-size:12px">
+      <option value="bilingual">双语对照</option>
+      <option value="translated">仅译文</option>
+    </select>
+  </div>
   <button id="settingsBtn">打开设置页（语言方向 / 阈值 / 模型）</button>
   <div class="foot" id="dirText"></div>
   <script src="popup.js"></script>

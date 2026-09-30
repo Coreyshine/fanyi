@@ -1,17 +1,29 @@
 {
   "manifest_version": 3,
   "name": "fanyi 本地翻译",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "本地模型实时网页翻译。需要 fanyi-server 在本机运行，翻译全程不联网。",
-  "permissions": ["storage", "contextMenus", "scripting"],
-  "host_permissions": ["http://127.0.0.1/*"],
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "sites.js",
+        "content.js",
+        "video.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }

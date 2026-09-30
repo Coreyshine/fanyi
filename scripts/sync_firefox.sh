@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 [ -f extension/manifest.json ] || { echo "extension/ 不存在"; exit 1; }
 
 mkdir -p extension-firefox/icons
-cp extension/background.js extension/content.js extension/options.html extension/options.js extension/popup.html extension/popup.js extension-firefox/
+cp extension/background.js extension/content.js extension/options.html extension/options.js extension/popup.html extension/popup.js extension/sites.js extension/video.js extension-firefox/
 cp extension/icons/*.png extension-firefox/icons/
 # Firefox 差异：background 用 scripts、gecko 元数据；其余与 Chrome 版一致
 python3 - <<'EOF'

@@ -75,6 +75,20 @@ async function init() {
     if (!r.ok) $('warn').textContent = '✗ ' + (r.error || '操作失败');
   });
 
+  /* 视频字幕开关与模式（chrome.storage，video.js 监听生效） */
+  chrome.storage.local.get(['video_enabled', 'video_mode'], (d) => {
+    $('videoToggle').checked = d.video_enabled !== false;
+    $('videoMode').value = d.video_mode || 'bilingual';
+    $('videoModeRow').style.display = $('videoToggle').checked ? 'flex' : 'none';
+  });
+  $('videoToggle').addEventListener('change', (e) => {
+    chrome.storage.local.set({ video_enabled: e.target.checked });
+    $('videoModeRow').style.display = e.target.checked ? 'flex' : 'none';
+  });
+  $('videoMode').addEventListener('change', (e) => {
+    chrome.storage.local.set({ video_mode: e.target.value });
+  });
+
   $('settingsBtn').addEventListener('click', () => {
     const port = (cfg.ok && cfg.data.port) || 8765;
     chrome.tabs.create({ url: `http://127.0.0.1:${port}/settings` });
