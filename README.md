@@ -92,3 +92,67 @@ fanyi/
 
 翻译模型：[腾讯混元 Hy-MT2-1.8B-GGUF](https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF)（官方转换版；启动后在设置页一键下载，内置多镜像自动切换）。
 推理引擎：[llama.cpp](https://github.com/ggml-org/llama.cpp) v0.5.0（MIT）。
+
+---
+
+# fanyi — Local Real-Time Web Page Translation (English)
+
+**English** | [简体中文](README.md)
+
+## Quick Start (macOS)
+
+```bash
+# 1. Build (requires Xcode Command Line Tools + CMake)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+
+# 2. Start the service (lives in the menu bar as「译」)
+./build/fanyi-server
+
+# 3. Install the browser extension
+#    Chrome/Edge: chrome://extensions → Developer mode → Load unpacked → extension/ folder
+#    Firefox: load extension-firefox/ via about:debugging
+```
+
+Open any foreign-language page — it translates automatically. The floating
+switch (top-right of every page) pauses/restores; the tray menu opens
+Settings or pauses translation globally.
+
+Settings: <http://127.0.0.1:8765/settings>
+
+## Model Download
+
+On first use, open Settings → **Model** and pick one of three quantizations
+(device RAM is auto-detected and a recommendation is highlighted):
+
+| Version | Size | Quality | RAM in use | Suggested |
+|---|---|---|---|---|
+| Q8_0 (default) | 1.9 GB | Near lossless | ~2.5 GB | Recommended, accuracy first |
+| Q6_K | 1.5 GB | Very good | ~2.1 GB | Balanced choice |
+| Q4_K_M | 1.1 GB | Degraded | ~1.6 GB | Low-memory machines |
+
+Downloads use automatic multi-mirror failover
+(hf-mirror.com → HuggingFace) with resume support. The OCR models for
+screenshot translation (~15 MB) download the same way.
+
+## HTTP API (localhost only)
+
+| Endpoint | Description |
+|---|---|
+| `GET /v1/status` | Service & model status |
+| `GET /v1/config` | Current configuration |
+| `POST /v1/config` | Update configuration |
+| `POST /v1/translate` | `{"segments":["..."],"target":"zh"}` → NDJSON stream |
+| `GET /v1/models` | Model catalog + device recommendation |
+| `GET /settings` | Settings page |
+
+## Translation Model
+
+[Tencent Hunyuan Hy-MT2-1.8B-GGUF](https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF)
+(official conversion; downloaded in one click from the Settings page with
+automatic multi-mirror failover).
+Inference engine: [llama.cpp](https://github.com/ggml-org/llama.cpp) v0.5.0 (MIT).
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
