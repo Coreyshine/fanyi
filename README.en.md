@@ -11,6 +11,11 @@ Translate any web page in real time with a **fully local AI model** (Tencent Hun
 - **Selection & screenshot translation**: select text anywhere or capture a screen region and get the translation instantly
 - **Lightweight**: lazy model loading, idle auto-unload, visible-area-first for long pages, local translation cache
 - **Accurate**: Q8_0 quantization (near lossless) + optional greedy "precision mode"
+- **Runs everywhere**: devices without a dedicated GPU do all inference on the CPU —
+  integrated graphics and older machines work fine; Apple Silicon and common GPUs
+  get automatic acceleration, zero configuration
+- **Beyond the browser**: selection translation (select & translate) + screenshot
+  translation (capture any screen region, built-in lightweight OCR, just 15 MB)
 
 ## Quick Start (macOS)
 
