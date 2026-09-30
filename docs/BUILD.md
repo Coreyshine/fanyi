@@ -22,8 +22,8 @@ git submodule update --init --depth 1      # llama.cpp v0.5.0（固定版本）
 （或安装目录旁 `models/`，或设置页自定义路径）。
 
 ```bash
-# 模型从硬盘拷入（如尚未拷贝）
-cp "/Volumes/3T HDD/models1/Hy-MT2-1.8B-GGUF/Hy-MT2-1.8B-Q8_0.gguf" models/
+# 从官方仓库下载（任选一量化版本；也可启动服务后在设置页一键下载）
+curl -L -o models/Hy-MT2-1.8B-Q8_0.gguf   "https://hf-mirror.com/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q8_0.gguf"
 # 低内存机器可换 Q6_K（1.5 GB），并在设置页把模型路径指向它
 ```
 

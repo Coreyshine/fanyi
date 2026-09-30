@@ -84,5 +84,5 @@ fanyi/
 | Q6_K | 1.5 GB | 很好 | 低内存机器备选 |
 | Q4_K_M | 1.1 GB | 有折损 | 不推荐用于正式翻译 |
 
-模型来源：`/Volumes/3T HDD/models1/Hy-MT2-1.8B-GGUF/`（腾讯混元 Hy-MT2-1.8B，许可见模型卡）。
+翻译模型：[腾讯混元 Hy-MT2-1.8B-GGUF](https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF)（官方转换版；国内可经 hf-mirror.com 镜像下载，或直接在设置页内置下载器获取）。
 推理引擎：[llama.cpp](https://github.com/ggml-org/llama.cpp) v0.5.0（MIT）。
