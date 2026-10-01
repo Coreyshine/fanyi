@@ -26,6 +26,7 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                             g_actions.enabled() ? "翻译：开（点此暂停）" : "翻译：暂停（点此开启）");
                 AppendMenuA(menu, MF_STRING, 6, g_actions.video_enabled() ? "视频字幕：开" : "视频字幕：关");
                 AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
+                AppendMenuA(menu, MF_STRING, 7, "悬停检测翻译（鼠标指向文字区域）");
                 AppendMenuA(menu, MF_STRING, 4, "划词翻译（先选中文字再点）");
                 AppendMenuA(menu, MF_STRING, 5, "截图翻译（框选屏幕区域）");
                 AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
@@ -38,6 +39,7 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 switch (cmd) {
                     case 1: ShellExecuteA(h, "open", g_actions.settings_url, NULL, NULL, SW_SHOWNORMAL); break;
                     case 2: g_actions.toggle_enabled(); break;
+                    case 7: g_actions.hover_detect(); break;
                     case 4: g_actions.select_translate(); break;
                     case 6: g_actions.toggle_video(); break;
                     case 5: g_actions.capture_translate(); break;

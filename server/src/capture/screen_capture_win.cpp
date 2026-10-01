@@ -92,4 +92,41 @@ bool screen_capture_to_file(const std::string &png_path, std::string *err) {
     return true;
 }
 
+bool capture_region_to_file(int x, int y, int w, int h,
+                            const std::string &png_path, std::string *err) {
+    HDC screenDC = GetDC(NULL);
+    HDC memDC = CreateCompatibleDC(screenDC);
+    HBITMAP bmp = CreateCompatibleBitmap(screenDC, w, h);
+    HGDIOBJ old = SelectObject(memDC, bmp);
+    BitBlt(memDC, 0, 0, w, h, screenDC, x, y, SRCCOPY);
+
+    std::vector<unsigned char> rgb((size_t)w * h * 3);
+    BITMAPINFOHEADER bi = {};
+    bi.biSize = sizeof bi;
+    bi.biWidth = w;
+    bi.biHeight = -h;
+    bi.biPlanes = 1;
+    bi.biBitCount = 24;
+    bi.biCompression = BI_RGB;
+    GetDIBits(screenDC, bmp, 0, h, rgb.data(), (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+    SelectObject(memDC, old);
+    DeleteObject(bmp);
+    DeleteDC(memDC);
+    ReleaseDC(NULL, screenDC);
+
+    if (!stbi_write_png(png_path.c_str(), w, h, 3, rgb.data(), w * 3)) {
+        if (err) *err = "区域截图失败";
+        return false;
+    }
+    return true;
+}
+
+bool mouse_position(int *x, int *y) {
+    POINT p;
+    if (!GetCursorPos(&p)) return false;
+    *x = p.x;
+    *y = p.y;
+    return true;
+}
+
 } // namespace fanyi

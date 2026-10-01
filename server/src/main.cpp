@@ -46,6 +46,60 @@ static bool tray_video_enabled_fn()  { return g_svc->video_enabled(); }
 static void tray_video_toggle_fn()   { g_svc->toggle_video(); }
 static void tray_select_fn()         { run_select_translate_async(); }
 
+/* 悬停检测：以鼠标为中心截取一块区域 → OCR 整块识别 → 整段一次翻译（不断句） */
+static void run_hover_detect_async() {
+    Service *svc = g_svc;
+    std::thread([svc] {
+#ifdef FANYI_OCR_ENABLED
+        char *udir = fanyi_cfg_user_models_dir();
+        if (!udir) return;
+        std::string ocr_dir = std::string(udir) + "/ocr";
+        free(udir);
+        std::string oerr;
+        if (!fanyi::ocr_models_installed(ocr_dir)) {
+            fanyi::result_window_show("悬停检测", "OCR 模型未下载：请打开设置页，在「截图识别」卡片下载（约 15MB）", "提示");
+            return;
+        }
+        if (!fanyi::ocr_ensure_loaded(ocr_dir, &oerr)) {
+            fanyi::result_window_show("悬停检测", oerr, "提示");
+            return;
+        }
+        /* 悬停语义：等鼠标在目标文字上停稳（800ms 未移动），最长等 30s */
+        int lx = -1, ly = -1, stable = 0;
+        bool ready = false;
+        for (int i = 0; i < 300 && !ready; i++) {
+            int x = -1, y = -1;
+            if (!fanyi::mouse_position(&x, &y)) { std::this_thread::sleep_for(std::chrono::milliseconds(100)); continue; }
+            if (x == lx && y == ly) { if (++stable >= 8) ready = true; }
+            else { stable = 0; lx = x; ly = y; }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (!ready) { fanyi::result_window_show("悬停检测", "已取消（鼠标未在文字上停留）", "提示"); return; }
+        int mx = lx, my = ly;
+        int w = 720, h = 320;   /* 覆盖鼠标附近一整段文字 */
+        std::string png = ocr_dir + "/hover.png";
+        std::string cerr2;
+        if (!fanyi::capture_region_to_file(mx - w/2, my - h/2, w, h, png, &cerr2)) {
+            fanyi::result_window_show("悬停检测", cerr2, "提示");
+            return;
+        }
+        std::string text;
+        std::string oerr2;
+        bool ok = fanyi::ocr_image_file(png, &text, &oerr2);
+        std::remove(png.c_str());
+        if (!ok) { fanyi::result_window_show("悬停检测", oerr2, "提示"); return; }
+        if (text.empty()) { fanyi::result_window_show("悬停检测", "未识别到文字，请将鼠标指向包含文字的区域", "提示"); return; }
+        std::string terr;
+        std::string out = svc->translate_text(text, &terr);   /* 整段一次翻译，不断句 */
+        if (out.empty()) out = terr.empty() ? "翻译失败" : terr;
+        fanyi::result_window_show(text, out, svc->target_lang_name());
+#else
+        fanyi::result_window_show("悬停检测", "本构建未启用 OCR", "提示");
+#endif
+    }).detach();
+}
+static void tray_hover_fn()         { run_hover_detect_async(); }
+
 /* 截图翻译：框选屏幕 → OCR → 翻译 → 浮窗 */
 static void tray_capture_fn() {
     Service *svc = g_svc;
@@ -96,6 +150,7 @@ static int run_with_tray(Service *svc) {
     actions.enabled        = tray_enabled_fn;
     actions.toggle_enabled = tray_toggle_fn;
     actions.quit           = tray_quit_fn;
+    actions.hover_detect      = tray_hover_fn;
     actions.select_translate  = tray_select_fn;
     actions.capture_translate = tray_capture_fn;
     actions.video_enabled     = tray_video_enabled_fn;

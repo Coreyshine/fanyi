@@ -11,6 +11,7 @@ struct TrayActions {
     bool (*enabled)();          /* 当前总开关状态 */
     void (*toggle_enabled)();   /* 切换总开关 */
     void (*quit)();             /* 请求退出 */
+    void (*hover_detect)();     /* 悬停检测：鼠标处整块文字 → 翻译 → 浮窗 */
     void (*select_translate)(); /* 划词翻译：取选中文字 → 翻译 → 浮窗 */
     void (*capture_translate)();/* 截图翻译（v1.1-beta 接入） */
     bool (*video_enabled)();    /* 视频字幕开关状态 */

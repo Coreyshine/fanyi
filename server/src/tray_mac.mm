@@ -16,6 +16,7 @@ static std::atomic<bool> g_quit{false};
 - (void)onSettings:(id)sender;
 - (void)onToggle:(id)sender;
 - (void)onVideoToggle:(id)sender;
+- (void)onHoverDetect:(id)sender;
 - (void)onSelectTranslate:(id)sender;
 - (void)onCaptureTranslate:(id)sender;
 - (void)onQuit:(id)sender;
@@ -39,6 +40,10 @@ static std::atomic<bool> g_quit{false};
     NSMenuItem *it = (NSMenuItem *)sender;
     it.state = g_actions.video_enabled() ? NSControlStateValueOn : NSControlStateValueOff;
     it.title = g_actions.video_enabled() ? @"视频字幕：开" : @"视频字幕：关";
+}
+- (void)onHoverDetect:(id)sender {
+    (void)sender;
+    g_actions.hover_detect();
 }
 - (void)onSelectTranslate:(id)sender {
     (void)sender;
@@ -90,6 +95,11 @@ int tray_run(const TrayActions &actions) {
         [menu addItem:video];
 
         [menu addItem:[NSMenuItem separatorItem]];
+
+        NSMenuItem *hov = [[NSMenuItem alloc] initWithTitle:@"悬停检测翻译（鼠标指向文字区域）"
+                                                     action:@selector(onHoverDetect:) keyEquivalent:@"h"];
+        hov.target = target;
+        [menu addItem:hov];
 
         NSMenuItem *sel = [[NSMenuItem alloc] initWithTitle:@"划词翻译（先选中文字再点）"
                                                      action:@selector(onSelectTranslate:) keyEquivalent:@"e"];
