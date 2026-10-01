@@ -31,6 +31,7 @@ typedef struct fanyi_cfg {
     char model_path[512];      /* GGUF 路径，空 = 自动探测 */
     char model_file[64];       /* 所选量化文件名（Hy-MT2-1.8B-Q8_0.gguf 等），空 = 自动 */
     bool enabled;              /* 总开关（托盘/设置页可切换） */
+    bool video_subtitle;       /* 视频字幕翻译开关（托盘/设置页/扩展弹窗三处同步） */
 } fanyi_cfg;
 
 void fanyi_cfg_default(fanyi_cfg *c);

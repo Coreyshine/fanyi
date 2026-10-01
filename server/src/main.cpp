@@ -42,6 +42,8 @@ static void run_select_translate_async() {
         fanyi::result_window_show(text, out, svc->target_lang_name());
     }).detach();
 }
+static bool tray_video_enabled_fn()  { return g_svc->video_enabled(); }
+static void tray_video_toggle_fn()   { g_svc->toggle_video(); }
 static void tray_select_fn()         { run_select_translate_async(); }
 
 /* 截图翻译：框选屏幕 → OCR → 翻译 → 浮窗 */
@@ -96,6 +98,8 @@ static int run_with_tray(Service *svc) {
     actions.quit           = tray_quit_fn;
     actions.select_translate  = tray_select_fn;
     actions.capture_translate = tray_capture_fn;
+    actions.video_enabled     = tray_video_enabled_fn;
+    actions.toggle_video      = tray_video_toggle_fn;
 
     /* 信号（Ctrl-C/服务管理器）→ 停止托盘事件循环 */
     std::thread watcher([svc] {

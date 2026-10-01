@@ -43,6 +43,7 @@ void fanyi_cfg_default(fanyi_cfg *c) {
     c->idle_unload_min = 10;
     c->port           = FANYI_DEFAULT_PORT;
     c->model_path[0]  = 0;
+    c->video_subtitle = true;
     c->enabled        = true;
 }
 
@@ -62,6 +63,7 @@ bool fanyi_cfg_save(const fanyi_cfg *c, const char *path, char *err, size_t err_
     jset_str(o, "model_path", c->model_path);
     jset_str(o, "model_file", c->model_file);
     cJSON_AddBoolToObject(o, "enabled", c->enabled);
+    cJSON_AddBoolToObject(o, "video_subtitle", c->video_subtitle);
 
     char *s = cJSON_Print(o);
     cJSON_Delete(o);
@@ -119,6 +121,8 @@ bool fanyi_cfg_load(fanyi_cfg *c, const char *path, char *err, size_t err_len) {
         snprintf(c->model_path, sizeof c->model_path, "%s", v->valuestring);
     if ((v = cJSON_GetObjectItem(o, "model_file")) && cJSON_IsString(v))
         snprintf(c->model_file, sizeof c->model_file, "%s", v->valuestring);
+    if ((v = cJSON_GetObjectItem(o, "video_subtitle")) && cJSON_IsBool(v))
+        c->video_subtitle = cJSON_IsTrue(v);
     if ((v = cJSON_GetObjectItem(o, "enabled")) && cJSON_IsBool(v))
         c->enabled = cJSON_IsTrue(v);
     cJSON_Delete(o);

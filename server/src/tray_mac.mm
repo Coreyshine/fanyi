@@ -15,6 +15,7 @@ static std::atomic<bool> g_quit{false};
 @interface FanyiTarget : NSObject
 - (void)onSettings:(id)sender;
 - (void)onToggle:(id)sender;
+- (void)onVideoToggle:(id)sender;
 - (void)onSelectTranslate:(id)sender;
 - (void)onCaptureTranslate:(id)sender;
 - (void)onQuit:(id)sender;
@@ -32,6 +33,12 @@ static std::atomic<bool> g_quit{false};
     NSMenuItem *it = (NSMenuItem *)sender;
     it.state = g_actions.enabled() ? NSControlStateValueOn : NSControlStateValueOff;
     it.title  = g_actions.enabled() ? @"翻译：开（点此暂停）" : @"翻译：暂停（点此开启）";
+}
+- (void)onVideoToggle:(id)sender {
+    g_actions.toggle_video();
+    NSMenuItem *it = (NSMenuItem *)sender;
+    it.state = g_actions.video_enabled() ? NSControlStateValueOn : NSControlStateValueOff;
+    it.title = g_actions.video_enabled() ? @"视频字幕：开" : @"视频字幕：关";
 }
 - (void)onSelectTranslate:(id)sender {
     (void)sender;
@@ -74,6 +81,14 @@ int tray_run(const TrayActions &actions) {
 
         [menu addItem:settings];
         [menu addItem:toggle];
+        [menu addItem:[NSMenuItem separatorItem]];
+
+        NSMenuItem *video = [[NSMenuItem alloc] initWithTitle:@"视频字幕：开"
+                                                       action:@selector(onVideoToggle:) keyEquivalent:@"v"];
+        video.target = target;
+        video.state = g_actions.video_enabled() ? NSControlStateValueOn : NSControlStateValueOff;
+        [menu addItem:video];
+
         [menu addItem:[NSMenuItem separatorItem]];
 
         NSMenuItem *sel = [[NSMenuItem alloc] initWithTitle:@"划词翻译（先选中文字再点）"

@@ -1,3 +1,110 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>诊断</title>
+<style>body{background:#111;color:#ddd;font:12px/1.5 monospace;padding:10px;white-space:pre-wrap}.err{color:#ff6b6b}.ok{color:#51d07e}</style></head>
+<body>
+<div id="log">[启动]</div>
+<script>
+window.__log = (m, cls) => { const d = document.getElementById('log'); const s = document.createElement('div'); if (cls) s.className = cls; s.textContent = m; d.appendChild(s); };
+window.onerror = (m, src, ln) => { window.__log('ERROR: ' + m + ' @' + (src||'').split('/').pop() + ':' + ln, 'err'); };
+window.addEventListener('unhandledrejection', e => window.__log('REJECTION: ' + (e.reason && e.reason.message || e.reason), 'err'));
+</script>
+<script>
+/*
+ * fanyi 扩展测试床 — shim.js
+ * 在普通页面里模拟 chrome.runtime.sendMessage / chrome.storage.local，
+ * 然后注入 ../extension/content.js 走真实流程（真实 HTTP 调 fanyi-server）。
+ */
+window.chrome = {
+  runtime: {
+    _listeners: [],
+    getManifest: () => ({ version: '1.2.0' }),
+    onMessage: {
+      addListener(fn) { chrome.runtime._listeners.push(fn); },
+    },
+    sendMessage(msg, cb) {
+      (async () => {
+        try {
+          const SERVER = 'http://127.0.0.1:8765';
+          if (msg.type === 'config') {
+            cb({ ok: true, data: await (await fetch(SERVER + '/v1/config')).json() });
+          } else if (msg.type === 'translate') {
+            const r = await fetch(SERVER + '/v1/translate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ segments: msg.segments, target: msg.target }),
+            });
+            const text = await r.text();
+            const results = new Array(msg.segments.length).fill(null);
+            for (const line of text.split('\n')) {
+              if (!line.trim()) continue;
+              const j = JSON.parse(line);
+              if (typeof j.i === 'number') results[j.i] = j.text;
+            }
+            cb({ ok: true, results });
+          } else cb({ ok: false, error: 'unknown' });
+        } catch (e) { cb({ ok: false, error: String(e) }); }
+      })();
+    },
+  },
+  storage: {
+    onChanged: { addListener(fn) { chrome.storage.local._listeners.push(fn); } },
+    local: {
+      _m: {},
+      _listeners: [],
+      get(k, cb) {
+        const keys = Array.isArray(k) ? k : [k];
+        const out = {};
+        for (const key of keys) out[key] = this._m[key];
+        if (cb) cb(out);                       /* 兼容回调风格（真实浏览器两种都支持） */
+        return Promise.resolve(out);
+      },
+      set(o, cb) {
+        Object.assign(this._m, o);
+        for (const fn of chrome.storage.local._listeners) fn(o, 'local');
+        if (cb) cb();
+        return Promise.resolve();
+      },
+    },
+  },
+};
+/* 测试辅助：模拟右键菜单点击（真实扩展里由 background 发 inputTranslate 消息） */
+window.__fanyiMenuClick = () => {
+  for (const fn of chrome.runtime._listeners) fn({ type: 'inputTranslate' }, {}, () => {});
+};
+
+const VER = String(Date.now());   /* 破缓存：确保每次加载最新扩展脚本 */
+for (const f of ['sites.js', 'content.js', 'video.js']) {
+  const s = document.createElement('script');
+  s.src = '../extension/' + f + '?v=' + VER;
+  document.head.appendChild(s);
+}
+
+</script>
+<script>
+window.__log('storage.onChanged=' + typeof (window.chrome && chrome.storage && chrome.storage.onChanged));
+</script>
+<script>
+/*
+ * fanyi 扩展 — sites.js
+ * 视频字幕站点选择器配置表：主机名（后缀匹配）→ 字幕文本元素选择器列表。
+ * 站点改版后在此更新即可；未列出的站点走通用「视频覆盖层文本」检测。
+ */
+window.__fanyiSites = {
+  'youtube.com': ['.ytp-caption-segment'],
+  'm.youtube.com': ['.ytp-caption-segment'],
+  'bilibili.com': ['.bpx-player-subtitle-text', '.bilibili-player-video-subtitle-text'],
+  'netflix.com': ['.player-timedtext-text-container span'],
+  'iqiyi.com': ['.iqp-player-subtitle', '.iqp-txt-wrapper'],
+  'youku.com': ['.subtitle-text', '.kui-subtitle-page'],
+  'v.qq.com': ['.txp-subtitle-text'],
+  'vip.1905.com': ['.v-subtitle-text'],
+  'coursera.org': ['.video__caption', '.rc-Phrase'],
+  'udemy.com': ['.well--container--pFYwq', '.captions-display--captions-cued--358Xq'],
+  'ted.com': ['.p_breadcrumb', 'h2.talk-transcript__teaser'],
+};
+
+</script>
+<script>
 /*
  * fanyi 扩展 — video.js
  * 网页视频字幕实时翻译：站点选择器优先（sites.js），通用「覆盖视频元素的高频
@@ -20,7 +127,6 @@
 
   const S = {
     enabled: true,
-    serverVideo: true,        // 服务端「视频字幕」开关（设置页/托盘可控）
     mode: 'bilingual',        // bilingual | translated
     target: 'zh',
     lastText: '',             // 上一条已处理字幕
@@ -112,7 +218,6 @@
 
   async function process() {
     if (busy) return;
-    if (!S.serverVideo) return;   /* 服务端「视频字幕」开关已关闭 */
     busy = true;
     try {
       for (const el of collectCandidates()) {
@@ -180,16 +285,10 @@
     }
   });
 
-  /* 目标语言与视频字幕开关来自服务配置（10s 轮询） */
-  async function pollConfig() {
-    const r = await SEND({ type: 'config' });
-    if (r && r.ok && r.data) {
-      if (r.data.target_lang) S.target = r.data.target_lang;
-      S.serverVideo = r.data.video_subtitle !== false;
-    }
-  }
-  pollConfig();
-  setInterval(pollConfig, 10000);
+  /* 目标语言来自服务配置 */
+  SEND({ type: 'config' }).then((r) => {
+    if (r && r.ok && r.data && r.data.target_lang) S.target = r.data.target_lang;
+  });
 
   /* 状态探针（调试与测试用） */
   window.__fanyiVideoDebug = {
@@ -203,3 +302,24 @@
     },
   };
 })();
+
+window.__log('video.js 已执行', 'ok');
+setInterval(() => {
+  const st = window.__fanyiVideoDebug && window.__fanyiVideoDebug.state;
+  if (st) window.__log('state: ' + JSON.stringify(st));
+}, 2000);
+</script>
+<div class="player" style="position:relative;background:#000;height:300px">
+  <video style="width:100%;height:100%" muted playsinline
+    src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"></video>
+  <div id="cap" style="position:absolute;bottom:20px;left:0;right:0;text-align:center;color:#fff">
+    <span id="capspan">Hello everyone, welcome back to the channel.</span></div>
+</div>
+<script>
+const L = ['Hello everyone, welcome back to the channel.',
+ 'Today we are talking about local AI models.',
+ 'No cloud servers, no tracking, no subscriptions.'];
+let i = 0;
+setInterval(() => { i = (i+1) % L.length; document.getElementById('capspan').textContent = L[i]; }, 2500);
+</script>
+</body></html>

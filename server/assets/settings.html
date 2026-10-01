@@ -136,6 +136,15 @@
   </div>
 
   <div class="card">
+    <h2>视频字幕</h2>
+    <div class="row">
+      <label>视频字幕翻译</label>
+      <span class="switch"><input type="checkbox" id="videoSubToggle"><span class="slider"></span></span>
+      <span class="sub" style="color:var(--sub);font-size:12.5px">关闭后浏览器扩展不再翻译视频字幕（划词/截图/网页翻译不受影响）</span>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>语言方向</h2>
     <div class="row">
       <label>源语言（从）</label>
@@ -420,6 +429,7 @@ $("testBtn").addEventListener("click", async () => {
 });
 
 loadConfig();
+loadVideoSwitch();
 refreshModelCard();
 refreshOcrCard();
 

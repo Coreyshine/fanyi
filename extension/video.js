@@ -20,6 +20,7 @@
 
   const S = {
     enabled: true,
+    serverVideo: true,        // 服务端「视频字幕」开关（设置页/托盘可控）
     mode: 'bilingual',        // bilingual | translated
     target: 'zh',
     lastText: '',             // 上一条已处理字幕
@@ -111,6 +112,7 @@
 
   async function process() {
     if (busy) return;
+    if (!S.serverVideo) return;   /* 服务端「视频字幕」开关已关闭 */
     busy = true;
     try {
       for (const el of collectCandidates()) {
@@ -178,10 +180,16 @@
     }
   });
 
-  /* 目标语言来自服务配置 */
-  SEND({ type: 'config' }).then((r) => {
-    if (r && r.ok && r.data && r.data.target_lang) S.target = r.data.target_lang;
-  });
+  /* 目标语言与视频字幕开关来自服务配置（10s 轮询） */
+  async function pollConfig() {
+    const r = await SEND({ type: 'config' });
+    if (r && r.ok && r.data) {
+      if (r.data.target_lang) S.target = r.data.target_lang;
+      S.serverVideo = r.data.video_subtitle !== false;
+    }
+  }
+  pollConfig();
+  setInterval(pollConfig, 10000);
 
   /* 状态探针（调试与测试用） */
   window.__fanyiVideoDebug = {

@@ -13,6 +13,8 @@ struct TrayActions {
     void (*quit)();             /* 请求退出 */
     void (*select_translate)(); /* 划词翻译：取选中文字 → 翻译 → 浮窗 */
     void (*capture_translate)();/* 截图翻译（v1.1-beta 接入） */
+    bool (*video_enabled)();    /* 视频字幕开关状态 */
+    void (*toggle_video)();     /* 视频字幕开关 */
 };
 
 /* 返回后进程可以退出。无托盘环境的实现只等待 quit。 */

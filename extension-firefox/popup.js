@@ -26,6 +26,15 @@ function sendTab(tabId, msg) {
   });
 }
 
+function sendBG(msg) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(msg, (r) =>
+        chrome.runtime.lastError ? resolve(null) : resolve(r || null));
+    } catch { resolve(null); }
+  });
+}
+
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const cfg = await sendBG({ type: 'config' });
@@ -81,8 +90,9 @@ async function init() {
     $('videoMode').value = d.video_mode || 'bilingual';
     $('videoModeRow').style.display = $('videoToggle').checked ? 'flex' : 'none';
   });
-  $('videoToggle').addEventListener('change', (e) => {
+  $('videoToggle').addEventListener('change', async (e) => {
     chrome.storage.local.set({ video_enabled: e.target.checked });
+    await SEND({ type: 'setVideoSubtitle', value: e.target.checked });   /* 与设置页/托盘同步 */
     $('videoModeRow').style.display = e.target.checked ? 'flex' : 'none';
   });
   $('videoMode').addEventListener('change', (e) => {

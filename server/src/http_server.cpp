@@ -311,7 +311,7 @@ bool Service::start(std::string *err) {
         {
             std::lock_guard<std::mutex> g(s.cfg_mtx);
             cJSON_AddBoolToObject(o, "enabled", s.cfg.enabled);
-            cJSON_AddStringToObject(o, "source_lang", s.cfg.source_lang);
+            cJSON_AddBoolToObject(o, "video_subtitle", s.cfg.video_subtitle);
             cJSON_AddStringToObject(o, "target_lang", s.cfg.target_lang);
             cJSON_AddBoolToObject(o, "auto_translate", s.cfg.auto_translate);
             cJSON_AddNumberToObject(o, "foreign_ratio", s.cfg.foreign_ratio);
@@ -351,6 +351,7 @@ bool Service::start(std::string *err) {
         cJSON_AddStringToObject(o, "model_path", s.cfg.model_path);
         cJSON_AddStringToObject(o, "model_file", s.cfg.model_file);
         cJSON_AddBoolToObject(o, "enabled", s.cfg.enabled);
+        cJSON_AddBoolToObject(o, "video_subtitle", s.cfg.video_subtitle);
         char *txt = cJSON_PrintUnformatted(o);
         cJSON_Delete(o);
         res.set_content(txt ? txt : "{}", "application/json");
@@ -406,6 +407,8 @@ bool Service::start(std::string *err) {
                     model_dirty = true;   /* 切换量化：卸载后按新文件名重载 */
                 }
             }
+            if ((v = cJSON_GetObjectItem(in, "video_subtitle")) && cJSON_IsBool(v))
+                s.cfg.video_subtitle = cJSON_IsTrue(v);
             if ((v = cJSON_GetObjectItem(in, "enabled")) && cJSON_IsBool(v))
                 s.cfg.enabled = cJSON_IsTrue(v);
             char serr[256] = {0};
@@ -797,6 +800,20 @@ bool Service::shutdown_requested() const { return impl_->shutdown_req.load(); }
 std::string Service::target_lang_name() const {
     std::lock_guard<std::mutex> g(impl_->cfg_mtx);
     return lang_name_zh(impl_->cfg.target_lang);
+}
+
+bool Service::toggle_video() {
+    Impl &s = *impl_;
+    std::lock_guard<std::mutex> g(s.cfg_mtx);
+    s.cfg.video_subtitle = !s.cfg.video_subtitle;
+    char err[256] = {0};
+    s.save_cfg(err, sizeof err);
+    return s.cfg.video_subtitle;
+}
+
+bool Service::video_enabled() const {
+    std::lock_guard<std::mutex> g(impl_->cfg_mtx);
+    return impl_->cfg.video_subtitle;
 }
 
 bool Service::toggle_enabled() {

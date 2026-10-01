@@ -33,6 +33,10 @@ public:
     /* 供划词/截图翻译使用：翻译单段文本（阻塞，返回译文；失败置 err） */
     std::string translate_text(const std::string &source, std::string *err);
 
+    /* 视频字幕开关（托盘/设置页/扩展三处同步此字段） */
+    bool toggle_video();
+    bool video_enabled() const;
+
     /* 当前目标语言的中文名（用于结果浮窗标题） */
     std::string target_lang_name() const;
 

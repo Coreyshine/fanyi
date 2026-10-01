@@ -70,6 +70,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ enabled: !cur.enabled }),
         });
         sendResponse({ ok: true, enabled: !cur.enabled });
+      } else if (msg.type === "setVideoSubtitle") {
+        const cur = await fetchJson("/v1/config");
+        await fetchJson("/v1/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ video_subtitle: !!msg.value }),
+        });
+        sendResponse({ ok: true, value: !!msg.value });
       } else if (msg.type === "status") {
         sendResponse({ ok: true, data: await fetchJson("/v1/status") });
       } else if (msg.type === "translate") {

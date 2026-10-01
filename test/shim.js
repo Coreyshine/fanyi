@@ -6,6 +6,7 @@
 window.chrome = {
   runtime: {
     _listeners: [],
+    getManifest: () => ({ version: '1.2.0' }),
     onMessage: {
       addListener(fn) { chrome.runtime._listeners.push(fn); },
     },
@@ -34,20 +35,23 @@ window.chrome = {
       })();
     },
   },
-  onChanged: { addListener(fn) { chrome.storage.local._listeners.push(fn); } },
   storage: {
+    onChanged: { addListener(fn) { chrome.storage.local._listeners.push(fn); } },
     local: {
       _m: {},
       _listeners: [],
-      async get(k) {
+      get(k, cb) {
         const keys = Array.isArray(k) ? k : [k];
         const out = {};
         for (const key of keys) out[key] = this._m[key];
-        return out;
+        if (cb) cb(out);                       /* 兼容回调风格（真实浏览器两种都支持） */
+        return Promise.resolve(out);
       },
-      async set(o) {
+      set(o, cb) {
         Object.assign(this._m, o);
         for (const fn of chrome.storage.local._listeners) fn(o, 'local');
+        if (cb) cb();
+        return Promise.resolve();
       },
     },
   },
