@@ -1,3 +1,95 @@
+window.__errs = [];
+window.addEventListener('error', e => window.__errs.push(String(e.message).slice(0, 90)));
+window.addEventListener('unhandledrejection', e => window.__errs.push('REJ: ' + String(e.reason && e.reason.message || e.reason).slice(0, 90)));
+/*
+ * fanyi 扩展测试床 — shim.js
+ * 在普通页面里模拟 chrome.runtime.sendMessage / chrome.storage.local，
+ * 然后注入 ../extension/content.js 走真实流程（真实 HTTP 调 fanyi-server）。
+ */
+window.chrome = {
+  runtime: {
+    _listeners: [],
+    getManifest: () => ({ version: '1.2.0' }),
+    onMessage: {
+      addListener(fn) { chrome.runtime._listeners.push(fn); },
+    },
+    sendMessage(msg, cb) {
+      (async () => {
+        try {
+          const SERVER = 'http://127.0.0.1:8765';
+          if (msg.type === 'config') {
+            cb({ ok: true, data: await (await fetch(SERVER + '/v1/config')).json() });
+          } else if (msg.type === 'translate') {
+            const r = await fetch(SERVER + '/v1/translate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ segments: msg.segments, target: msg.target }),
+            });
+            const text = await r.text();
+            const results = new Array(msg.segments.length).fill(null);
+            for (const line of text.split('\n')) {
+              if (!line.trim()) continue;
+              const j = JSON.parse(line);
+              if (typeof j.i === 'number') results[j.i] = j.text;
+            }
+            cb({ ok: true, results });
+          } else cb({ ok: false, error: 'unknown' });
+        } catch (e) { cb({ ok: false, error: String(e) }); }
+      })();
+    },
+  },
+  storage: {
+    onChanged: { addListener(fn) { chrome.storage.local._listeners.push(fn); } },
+    local: {
+      _m: {},
+      _listeners: [],
+      get(k, cb) {
+        const keys = Array.isArray(k) ? k : [k];
+        const out = {};
+        for (const key of keys) out[key] = this._m[key];
+        if (cb) cb(out);                       /* 兼容回调风格（真实浏览器两种都支持） */
+        return Promise.resolve(out);
+      },
+      set(o, cb) {
+        Object.assign(this._m, o);
+        for (const fn of chrome.storage.local._listeners) fn(o, 'local');
+        if (cb) cb();
+        return Promise.resolve();
+      },
+    },
+  },
+};
+/* 测试辅助：模拟右键菜单点击（真实扩展里由 background 发 inputTranslate 消息） */
+window.__fanyiMenuClick = () => {
+  for (const fn of chrome.runtime._listeners) fn({ type: 'inputTranslate' }, {}, () => {});
+};
+
+const VER = String(Date.now());   /* 破缓存：确保每次加载最新扩展脚本 */
+for (const f of ['sites.js', 'content.js', 'video.js']) {
+  const s = document.createElement('script');
+  s.src = 'http://127.0.0.1:8899/extension/' + f + '?v=' + VER;
+  document.head.appendChild(s);
+}
+
+/*
+ * fanyi 扩展 — sites.js
+ * 视频字幕站点选择器配置表：主机名（后缀匹配）→ 字幕文本元素选择器列表。
+ * 站点改版后在此更新即可；未列出的站点走通用「视频覆盖层文本」检测。
+ */
+window.__fanyiSites = {
+  'youtube.com': ['.ytp-caption-segment'],
+  'm.youtube.com': ['.ytp-caption-segment'],
+  'bilibili.com': ['.bpx-player-subtitle-text', '.bilibili-player-video-subtitle-text'],
+  'netflix.com': ['.player-timedtext-text-container span'],
+  'iqiyi.com': ['.iqp-player-subtitle', '.iqp-txt-wrapper'],
+  'youku.com': ['.subtitle-text', '.kui-subtitle-page'],
+  'v.qq.com': ['.txp-subtitle-text'],
+  'vip.1905.com': ['.v-subtitle-text'],
+  'coursera.org': ['.video__caption', '.rc-Phrase'],
+  'udemy.com': ['.well--container--pFYwq', '.captions-display--captions-cued--358Xq'],
+  'ted.com': ['.p_breadcrumb', 'h2.talk-transcript__teaser'],
+};
+
 /*
  * fanyi 扩展 — content.js
  * 页面实时翻译：取词 → 外文占比检测(>阈值自动翻译) → 批量送本地服务 → 流式替换。
@@ -40,17 +132,12 @@
   /* ---------- 与后台通信 ---------- */
   function send(msg) {
     return new Promise((resolve) => {
-      let done = false;
-      const finish = (v) => { if (!done) { done = true; resolve(v); } };
-      const timer = setTimeout(() => finish({ ok: false, error: '请求超时' }), 25000);
       try {
         chrome.runtime.sendMessage(msg, (r) => {
-          if (done) return;
-          done = true; clearTimeout(timer);
           if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
           else resolve(r || { ok: false, error: 'no response' });
         });
-      } catch (e) { done = true; clearTimeout(timer); resolve({ ok: false, error: String(e) }); }
+      } catch (e) { resolve({ ok: false, error: String(e) }); }
     });
   }
 
@@ -707,3 +794,210 @@
     setTimeout(init, 300);
   }
 })();
+
+/*
+ * fanyi 扩展 — video.js
+ * 网页视频字幕实时翻译：站点选择器优先（sites.js），通用「覆盖视频元素的高频
+ * 文本」检测兜底。双语/仅译文两种模式，同句去重，不干扰页面翻译主模块。
+ */
+(() => {
+  'use strict';
+  if (window.__fanyiVideoLoaded) return;
+  window.__fanyiVideoLoaded = true;
+
+  const SEND = (msg) => new Promise((res) => {
+    try {
+      chrome.runtime.sendMessage(msg, (r) =>
+        chrome.runtime.lastError ? res(null) : res(r || null));
+    } catch { res(null); }
+  });
+
+  const CJK = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/;
+  const SUB_CLASS = 'fanyi-video-sub';
+
+  const S = {
+    enabled: true,
+    serverVideo: true,        // 服务端「视频字幕」开关（设置页/托盘可控）
+    mode: 'bilingual',        // bilingual | translated
+    target: 'zh',
+    lastText: '',             // 上一条已处理字幕
+    observer: null,
+    siteSelectors: null,      // 当前站点的选择器数组（null = 通用模式）
+    lastByEl: new WeakMap(),  // 元素 → 上次处理的文本
+  };
+
+  /* ---------- 工具 ---------- */
+  const siteKey = () => location.hostname.replace(/^www\./, '');
+  function matchSiteSelectors() {
+    const host = siteKey();
+    const table = window.__fanyiSites || {};
+    for (const k in table) {
+      if (host === k || host.endsWith('.' + k) || host.endsWith(k)) return table[k];
+    }
+    return null;
+  }
+
+  function overlapsVideo(el) {
+    let r;
+    try { r = el.getBoundingClientRect(); } catch { return false; }
+    if (r.width < 2 || r.height < 2) return false;
+    for (const v of document.querySelectorAll('video')) {
+      const vr = v.getBoundingClientRect();
+      if (r.left < vr.right && r.right > vr.left &&
+          r.top < vr.bottom && r.bottom > vr.top) return true;
+    }
+    return false;
+  }
+
+  function isTargetLang(text) {
+    if (/^(zh|ja|ko)/.test(S.target)) return CJK.test(text);
+    return !CJK.test(text) && /\p{L}/u.test(text);   /* 拉丁系目标语言：粗判 */
+  }
+
+  function collectCandidates() {
+    if (S.siteSelectors) {
+      const out = [];
+      for (const sel of S.siteSelectors)
+        for (const el of document.querySelectorAll(sel))
+          if (el.textContent.trim()) out.push(el);
+      return out;
+    }
+    /* 通用模式：覆盖在视频上、含直接文本的元素 */
+    const out = [];
+    const seen = new Set();
+    for (const el of document.querySelectorAll('div,span,p')) {
+      if (seen.has(el)) continue;
+      const v = [...el.childNodes].filter(n => n.nodeType === 3)
+        .map(n => n.nodeValue).join('').trim();
+      if (v.length < 2) continue;
+      if (overlapsVideo(el)) { out.push(el); seen.add(el); }
+    }
+    return out;
+  }
+
+  /* ---------- 渲染 ---------- */
+  function renderBilingual(el, text) {
+    let t = el.nextElementSibling;
+    if (!t || !t.classList || !t.classList.contains(SUB_CLASS)) {
+      t = document.createElement('div');
+      t.className = SUB_CLASS;
+      t.style.cssText =
+        'margin:4px auto 0;text-align:center;color:#fff;background:rgba(8,8,8,.72);' +
+        'padding:2px 10px;border-radius:4px;font-size:.92em;line-height:1.35;' +
+        'width:fit-content;max-width:100%;position:relative;z-index:2147483646;';
+      el.after(t);
+    }
+    t.textContent = text;
+  }
+
+  function renderTranslated(el, text) {
+    if (!el.dataset.fanyiOrig) el.dataset.fanyiOrig = el.textContent;
+    el.textContent = text;
+  }
+
+  function restoreAll() {
+    for (const t of document.querySelectorAll('.' + SUB_CLASS)) t.remove();
+    for (const el of document.querySelectorAll('[data-fanyi-orig]')) {
+      el.textContent = el.dataset.fanyiOrig;
+      delete el.dataset.fanyiOrig;
+    }
+  }
+
+  /* ---------- 翻译流程 ---------- */
+  let busy = false;
+  const pending = new Map();   // el → 原文
+
+  async function process() {
+    if (busy) return;
+    if (!S.serverVideo) return;   /* 服务端「视频字幕」开关已关闭 */
+    busy = true;
+    try {
+      for (const el of collectCandidates()) {
+        const text = el.textContent.replace(/\s+/g, ' ').trim();
+        if (!text || text === S.lastText) continue;
+        if (S.lastByEl.get(el) === text) continue;
+        if (isTargetLang(text)) continue;         /* 已是目标语言 */
+        if (pending.has(el)) continue;
+        pending.set(el, text);
+        S.lastByEl.set(el, text);
+
+        const r = await SEND({ type: 'translate', segments: [text], target: S.target });
+        const out = r && r.ok && r.results && r.results[0];
+        if (typeof out !== 'string' || !out) { pending.delete(el); continue; }
+
+        if (!el.isConnected) { pending.delete(el); continue; }
+        if (S.mode === 'translated') renderTranslated(el, out);
+        else renderBilingual(el, out);
+        pending.delete(el);
+        S.lastText = text;
+      }
+    } finally { busy = false; }
+  }
+
+  /* ---------- 观察 ---------- */
+  function start() {
+    if (S.observer) return;
+    if (!document.body) {   /* 脚本在 head 注入时 body 可能尚未解析 */
+      document.addEventListener('DOMContentLoaded', () => start(), { once: true });
+      return;
+    }
+    S.siteSelectors = matchSiteSelectors();
+    S.observer = new MutationObserver(() => {
+      clearTimeout(S.debounce);
+      S.debounce = setTimeout(process, 200);
+    });
+    S.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    process();
+  }
+  function stop() {
+    if (S.observer) { S.observer.disconnect(); S.observer = null; }
+    restoreAll();
+    S.lastText = '';
+  }
+
+  /* ---------- 初始化 ---------- */
+  chrome.storage.local.get(['video_enabled', 'video_mode'], (d) => {
+    if (d.video_enabled === false) S.enabled = false;
+    if (d.video_mode) S.mode = d.video_mode;
+    if (S.enabled) start();
+  });
+  if (!(chrome.storage.onChanged && chrome.storage.onChanged.addListener)) {
+    return;   /* 环境无 storage 事件（异常环境），跳过监听 */
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes.video_enabled) {
+      S.enabled = changes.video_enabled.newValue !== false;
+      if (S.enabled) start(); else stop();
+    }
+    if (changes.video_mode) {
+      S.mode = changes.video_mode.newValue || 'bilingual';
+      restoreAll();
+      if (S.enabled) process();
+    }
+  });
+
+  /* 目标语言与视频字幕开关来自服务配置（10s 轮询） */
+  async function pollConfig() {
+    const r = await SEND({ type: 'config' });
+    if (r && r.ok && r.data) {
+      if (r.data.target_lang) S.target = r.data.target_lang;
+      S.serverVideo = r.data.video_subtitle !== false;
+    }
+  }
+  pollConfig();
+  setInterval(pollConfig, 10000);
+
+  /* 状态探针（调试与测试用） */
+  window.__fanyiVideoDebug = {
+    get state() {
+      return {
+        enabled: S.enabled, mode: S.mode, target: S.target, busy,
+        observer: !!S.observer, lastText: S.lastText,
+        selectors: S.siteSelectors ? S.siteSelectors.length : 'generic',
+        bodyReady: !!document.body,
+      };
+    },
+  };
+})();
+

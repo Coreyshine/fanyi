@@ -28,10 +28,16 @@ function sendTab(tabId, msg) {
 
 function sendBG(msg) {
   return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const timer = setTimeout(() => finish(null), 25000);
     try {
-      chrome.runtime.sendMessage(msg, (r) =>
-        chrome.runtime.lastError ? resolve(null) : resolve(r || null));
-    } catch { resolve(null); }
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        chrome.runtime.lastError ? resolve(null) : resolve(r || null);
+      });
+    } catch { done = true; clearTimeout(timer); resolve(null); }
   });
 }
 

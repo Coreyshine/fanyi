@@ -81,11 +81,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === "status") {
         sendResponse({ ok: true, data: await fetchJson("/v1/status") });
       } else if (msg.type === "translate") {
+        const ac = new AbortController();
+        const kill = setTimeout(() => ac.abort(), 20000);   /* 服务无响应 20s 熔断 */
         const r = await fetch(SERVER + "/v1/translate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ segments: msg.segments, target: msg.target }),
+          signal: ac.signal,
         });
+        clearTimeout(kill);
         if (!r.ok) {
           let m = "HTTP " + r.status;
           try { const j = await r.json(); if (j.error) m = j.error; } catch {}

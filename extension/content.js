@@ -40,12 +40,17 @@
   /* ---------- 与后台通信 ---------- */
   function send(msg) {
     return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      const timer = setTimeout(() => finish({ ok: false, error: '请求超时' }), 25000);
       try {
         chrome.runtime.sendMessage(msg, (r) => {
+          if (done) return;
+          done = true; clearTimeout(timer);
           if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
           else resolve(r || { ok: false, error: 'no response' });
         });
-      } catch (e) { resolve({ ok: false, error: String(e) }); }
+      } catch (e) { done = true; clearTimeout(timer); resolve({ ok: false, error: String(e) }); }
     });
   }
 

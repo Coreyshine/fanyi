@@ -9,10 +9,16 @@
   window.__fanyiVideoLoaded = true;
 
   const SEND = (msg) => new Promise((res) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; res(v); } };
+    const timer = setTimeout(() => finish(null), 25000);
     try {
-      chrome.runtime.sendMessage(msg, (r) =>
-        chrome.runtime.lastError ? res(null) : res(r || null));
-    } catch { res(null); }
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        chrome.runtime.lastError ? res(null) : res(r || null);
+      });
+    } catch { done = true; clearTimeout(timer); res(null); }
   });
 
   const CJK = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/;
